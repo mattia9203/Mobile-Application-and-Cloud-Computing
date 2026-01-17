@@ -1,15 +1,18 @@
 package com.example.runapp
 
 import android.Manifest
-import android.content.pm.PackageManager
 import android.graphics.Bitmap
+import android.graphics.BitmapFactory
 import android.os.Build
+import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
@@ -21,132 +24,149 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import androidx.core.content.ContextCompat
+import androidx.lifecycle.viewmodel.compose.viewModel
 import com.example.runapp.ui.theme.RunAppTheme
-import com.google.android.gms.maps.model.CameraPosition
-import com.google.android.gms.maps.model.LatLng
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.rememberCameraPositionState
+import java.text.SimpleDateFormat
+import java.util.*
+import java.util.concurrent.TimeUnit
+
 @Composable
-fun MainScreen() {
+fun MainScreen(viewModel: RunViewModel = viewModel()) {
     RunAppTheme {
-        val context = LocalContext.current
-        var isRunning by remember { mutableStateOf(false) }
-        var stepCount by remember { mutableStateOf(0) }
+        // STATE
+        var isRunActive by remember { mutableStateOf(false) }
+        var showAllActivities by remember { mutableStateOf(false) }
+        var selectedRun by remember { mutableStateOf<RunEntity?>(null) } // Controls the Dialog
 
+        val recentRuns by viewModel.allRuns.collectAsState()
+        val totalDistance by viewModel.totalDistance.collectAsState()
 
-        var lastCapturedPhoto by remember { mutableStateOf<Bitmap?>(null) }
-
-        var showCamera by remember { mutableStateOf(false) }
-
-        // --- PERMISSIONS ---
-        var hasPermission by remember {
-            mutableStateOf(ContextCompat.checkSelfPermission(context, Manifest.permission.ACCESS_FINE_LOCATION) == PackageManager.PERMISSION_GRANTED)
-        }
+        // PERMISSIONS
         val permissionLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestMultiplePermissions()
-        ) { permissions: Map<String, Boolean> -> // <-- Specify the type here
-            hasPermission = permissions[Manifest.permission.ACCESS_FINE_LOCATION] ?: false
-        }
+        ) { }
 
         LaunchedEffect(Unit) {
-            val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION)
+            val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.CAMERA)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) perms.add(Manifest.permission.ACTIVITY_RECOGNITION)
             permissionLauncher.launch(perms.toTypedArray())
         }
 
-        // --- SENSOR LOGIC ---
-        LaunchedEffect(isRunning) {
-            if (isRunning) {
-                val sensor = StepCounter(context)
-                sensor.stepFlow.collect { stepCount += it }
-            }
-        }
-
-        if (showCamera) {
-            // MODE 3: THE CAMERA (Full Screen)
-            CameraScreen(
-                onImageCaptured = { bitmap ->
-                    lastCapturedPhoto = bitmap
-                    showCamera = false // Close camera
-                },
-                onError = { /* Handle error */ }
+        // --- MAIN UI STRUCTURE ---
+        if (isRunActive) {
+            RunSessionScreen(
+                onStopClick = { runData ->
+                    viewModel.saveRun(runData)
+                    isRunActive = false
+                }
+            )
+        } else if (showAllActivities) {
+            AllActivitiesScreen(
+                onBackClick = { showAllActivities = false },
+                onItemClick = { run -> selectedRun = run }
             )
         } else {
-            // MODE 1 & 2: THE DASHBOARD (Map & Controls)
+            // DASHBOARD
             Scaffold(
                 containerColor = MaterialTheme.colorScheme.background,
                 topBar = { AppHeader() },
                 bottomBar = {
-                    if (!isRunning) {
-                        BottomAppBar(containerColor = MaterialTheme.colorScheme.surface) {
-                            IconButton(onClick = {}, modifier = Modifier.weight(1f)) { Icon(Icons.Default.History, "History") }
-                            Spacer(Modifier.weight(1f))
-                            IconButton(onClick = {}, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Person, "Profile") }
-                        }
+                    BottomAppBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 8.dp) {
+                        IconButton(onClick = {}, modifier = Modifier.weight(1f)) { Icon(Icons.Default.History, "History", tint = Color.Gray) }
+                        Spacer(Modifier.weight(1f))
+                        IconButton(onClick = {}, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Person, "Profile", tint = Color.Gray) }
                     }
                 },
                 floatingActionButton = {
-                    if (!isRunning) {
-                        FloatingActionButton(
-                            onClick = { isRunning = true },
-                            containerColor = MaterialTheme.colorScheme.primary,
-                            shape = CircleShape,
-                            modifier = Modifier.size(80.dp).offset(y = 50.dp)
-                        ) {
-                            Icon(Icons.Default.DirectionsRun, null, modifier = Modifier.size(40.dp))
-                        }
+                    FloatingActionButton(
+                        onClick = { isRunActive = true },
+                        containerColor = MaterialTheme.colorScheme.primary,
+                        shape = CircleShape,
+                        modifier = Modifier.size(80.dp).offset(y = 50.dp)
+                    ) {
+                        Icon(Icons.Default.DirectionsRun, null, modifier = Modifier.size(40.dp), tint = Color.Black)
                     }
                 },
                 floatingActionButtonPosition = FabPosition.Center
-            ) { padding ->
-                Column(modifier = Modifier.padding(padding).padding(horizontal = 20.dp)) {
+            ) { paddingValues ->
+                Column(
+                    modifier = Modifier.padding(paddingValues).padding(horizontal = 20.dp).fillMaxSize()
+                ) {
+                    Spacer(modifier = Modifier.height(10.dp))
+                    Text("READY TO RUN?", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
+                    Spacer(modifier = Modifier.height(20.dp))
 
-                    // IF WE TOOK A PHOTO, SHOW IT!
-                    if (lastCapturedPhoto != null) {
-                        Card(
-                            modifier = Modifier.fillMaxWidth().height(200.dp).padding(bottom = 16.dp),
-                            shape = RoundedCornerShape(16.dp)
-                        ) {
-                            Image(
-                                bitmap = lastCapturedPhoto!!.asImageBitmap(),
-                                contentDescription = "Captured",
-                                modifier = Modifier.fillMaxSize(),
-                                contentScale = androidx.compose.ui.layout.ContentScale.Crop
+                    // GOAL CARD
+                    Card(
+                        modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
+                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                        shape = RoundedCornerShape(16.dp)
+                    ) {
+                        Column(modifier = Modifier.padding(24.dp)) {
+                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                Text("Weekly Goal", color = Color.Gray)
+                                Text("10 km", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                            }
+                            Spacer(modifier = Modifier.height(16.dp))
+                            val progress = ((totalDistance ?: 0f) / 10f).coerceIn(0f, 1f)
+                            LinearProgressIndicator(
+                                progress = progress,
+                                modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp)),
+                                color = MaterialTheme.colorScheme.primary,
+                                trackColor = Color.DarkGray
                             )
-                        }
-                    } else {
-                        // Otherwise show the Map
-                        Card(
-                            modifier = Modifier.weight(1f).fillMaxWidth().padding(bottom = 20.dp).clip(RoundedCornerShape(24.dp)),
-                            colors = CardDefaults.cardColors(MaterialTheme.colorScheme.surface)
-                        ) {
-                            MapWithDot(hasPermission)
+                            Text("%.1f km done".format(totalDistance ?: 0f), fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 8.dp))
                         }
                     }
 
-                    if (isRunning) {
-                        Text("$stepCount", fontSize = 80.sp, color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold, modifier = Modifier.clickable { stepCount++ })
-
-                        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp), horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                            FloatingActionButton(onClick = { isRunning = false }, containerColor = MaterialTheme.colorScheme.error) {
-                                Icon(Icons.Default.Stop, "Stop")
-                            }
-                            Button(
-                                onClick = { showCamera = true }, // <--- OPEN CAMERA
-                                colors = ButtonDefaults.buttonColors(MaterialTheme.colorScheme.primary),
-                                shape = RoundedCornerShape(16.dp),
-                                modifier = Modifier.height(64.dp).weight(1f)
-                            ) {
-                                Icon(Icons.Default.CameraAlt, null)
-                                Text("SNAP PHOTO")
-                            }
+                    // HEADER
+                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                        Text("Recent Activity", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+                        TextButton(onClick = { showAllActivities = true }) {
+                            Text("All", color = Color.Gray)
                         }
+                    }
+
+                    // RECENT ACTIVITY PANEL
+                    RecentActivityPanel(runs = recentRuns, onItemClick = { run -> selectedRun = run })
+                }
+            }
+        }
+
+        // --- THE POPUP DIALOG LOGIC ---
+        // This sits "on top" of everything else
+        if (selectedRun != null) {
+            RunDetailDialog(
+                run = selectedRun!!,
+                onDismiss = { selectedRun = null },
+                onDelete = {
+                    viewModel.deleteRun(selectedRun!!)
+                    selectedRun = null
+                }
+            )
+        }
+    }
+}
+
+@Composable
+fun RecentActivityPanel(runs: List<RunEntity>, onItemClick: (RunEntity) -> Unit) {
+    val topRuns = runs.take(3)
+    if (topRuns.isNotEmpty()) {
+        Card(
+            colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1E)),
+            shape = RoundedCornerShape(16.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column {
+                topRuns.forEachIndexed { index, run ->
+                    RecentActivityItem(run = run, onClick = { onItemClick(run) })
+                    if (index < topRuns.size - 1) {
+                        HorizontalDivider(modifier = Modifier.padding(start = 86.dp, end = 16.dp), thickness = 1.dp, color = Color.DarkGray)
                     }
                 }
             }
@@ -154,7 +174,64 @@ fun MainScreen() {
     }
 }
 
-// --- KEEP YOUR HELPER FUNCTIONS ---
+@Composable
+fun RecentActivityItem(run: RunEntity, onClick: () -> Unit) {
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() }
+            .padding(16.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // MAP IMAGE
+        Box(
+            modifier = Modifier.size(70.dp).clip(RoundedCornerShape(12.dp)).background(Color.DarkGray),
+            contentAlignment = Alignment.Center
+        ) {
+            if (run.imagePath != null) {
+                val bitmap: Bitmap? = remember(run.imagePath) { BitmapFactory.decodeFile(run.imagePath) }
+                if (bitmap != null) {
+                    Image(
+                        bitmap = bitmap.asImageBitmap(),
+                        contentDescription = null,
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize()
+                    )
+                } else {
+                    Icon(Icons.Default.Map, null, tint = Color.Gray)
+                }
+            } else {
+                Icon(Icons.Default.Map, null, tint = Color.Gray)
+            }
+        }
+
+        Spacer(modifier = Modifier.width(16.dp))
+
+        // STATS
+        Column(modifier = Modifier.weight(1f)) {
+            val dateFormat = SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault())
+            Text(dateFormat.format(Date(run.timestamp)), fontSize = 12.sp, color = Color.LightGray)
+            Text("%.2f km".format(run.distanceKm), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Spacer(modifier = Modifier.height(4.dp))
+            Row {
+                Text(formatDurationMain(run.durationMillis), fontSize = 12.sp, color = Color.LightGray)
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("${run.caloriesBurned} kcal", fontSize = 12.sp, color = Color.LightGray)
+                Spacer(modifier = Modifier.width(10.dp))
+                Text("%.1f km/h".format(run.avgSpeedKmh), fontSize = 12.sp, color = Color.LightGray)
+            }
+        }
+        Icon(Icons.Default.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
+fun formatDurationMain(millis: Long): String {
+    val hours = TimeUnit.MILLISECONDS.toHours(millis)
+    val minutes = TimeUnit.MILLISECONDS.toMinutes(millis) % 60
+    val seconds = TimeUnit.MILLISECONDS.toSeconds(millis) % 60
+    return if (hours > 0) String.format("%d:%02d:%02d", hours, minutes, seconds) else String.format("%02d:%02d", minutes, seconds)
+}
+
 @Composable
 fun AppHeader() {
     Row(
@@ -164,32 +241,13 @@ fun AppHeader() {
     ) {
         Column {
             Text("Hello,", color = Color.Gray)
-            Text("Runner", color = Color.White, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("Runner", color = Color.Black, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         }
-        Icon(
-            Icons.Default.Person, contentDescription = null,
-            tint = MaterialTheme.colorScheme.primary,
-            modifier = Modifier.size(32.dp)
-        )
+        Box(
+            modifier = Modifier.size(40.dp).background(MaterialTheme.colorScheme.surface, CircleShape),
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+        }
     }
-}
-
-@Composable
-fun MapWithDot(isLocationEnabled: Boolean) {
-    val rome = LatLng(41.9028, 12.4964)
-    val cameraPositionState = rememberCameraPositionState {
-        position = CameraPosition.fromLatLngZoom(rome, 14f)
-    }
-    val mapProperties = remember(isLocationEnabled) {
-        MapProperties(isMyLocationEnabled = isLocationEnabled)
-    }
-    GoogleMap(
-        modifier = Modifier.fillMaxSize(),
-        cameraPositionState = cameraPositionState,
-        properties = mapProperties,
-        uiSettings = com.google.maps.android.compose.MapUiSettings(
-            zoomControlsEnabled = false,
-            myLocationButtonEnabled = false
-        )
-    )
 }
