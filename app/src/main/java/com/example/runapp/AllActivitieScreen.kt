@@ -13,24 +13,29 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import com.example.runapp.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun AllActivitiesScreen(
-    viewModel: RunViewModel = viewModel(),
+    // FIXED: Removed viewModel parameter from here
     onBackClick: () -> Unit,
-    onItemClick: (RunEntity) -> Unit // <--- ADDED THIS PARAMETER
+    onItemClick: (RunEntity) -> Unit
 ) {
+    // FIXED: Defined it here instead
+    val viewModel: RunViewModel = viewModel()
+
     val allRuns by viewModel.allRuns.collectAsState()
 
+    // White background for Light Theme
     Scaffold(
         containerColor = MaterialTheme.colorScheme.background,
         topBar = {
             TopAppBar(
-                title = { Text("All Activities", fontWeight = FontWeight.Bold) },
+                title = { Text("All Activities", fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground) },
                 navigationIcon = {
                     IconButton(onClick = onBackClick) {
-                        Icon(Icons.Default.ArrowBack, "Back")
+                        Icon(Icons.Default.ArrowBack, "Back", tint = MaterialTheme.colorScheme.onBackground)
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(containerColor = MaterialTheme.colorScheme.background)
@@ -45,13 +50,12 @@ fun AllActivitiesScreen(
             verticalArrangement = Arrangement.spacedBy(12.dp)
         ) {
             items(allRuns) { run ->
-                // Now we pass the click action to the item
+                // Reuse the updated white item
                 RecentActivityItem(
                     run = run,
                     onClick = { onItemClick(run) }
                 )
             }
-
             item { Spacer(modifier = Modifier.height(20.dp)) }
         }
     }

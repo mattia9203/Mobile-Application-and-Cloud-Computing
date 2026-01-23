@@ -4,7 +4,6 @@ import android.Manifest
 import android.graphics.Bitmap
 import android.graphics.BitmapFactory
 import android.os.Build
-import android.util.Log
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.compose.foundation.Image
@@ -22,6 +21,7 @@ import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
@@ -30,18 +30,36 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
-import com.example.runapp.ui.theme.RunAppTheme
+import com.example.runapp.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
+import com.google.firebase.auth.FirebaseAuth
 
 @Composable
-fun MainScreen(viewModel: RunViewModel = viewModel()) {
+fun MainScreen(onSignOut: () -> Unit) {
+    val viewModel: RunViewModel = viewModel()
+    val auth = FirebaseAuth.getInstance()
+    val user = auth.currentUser
+
+    // 2. Get the name (If name is empty, use "Runner" as backup)
+    val displayName = user?.displayName ?: "Runner"
     RunAppTheme {
-        // STATE
-        var isRunActive by remember { mutableStateOf(false) }
+        // STATES
+        // Observe runState
+        val runState by viewModel.runState.collectAsState()
+        // Calculate isRunActive based on the state (Running or Paused = Active)
+        val isRunActive = runState != RunState.READY
+
+        val currentDuration by viewModel.currentDuration.collectAsState()
+        val currentDistance by viewModel.currentDistance.collectAsState()
+        val currentCalories by viewModel.currentCalories.collectAsState()
+
+        // LOCAL STATE TO CONTROL FULL SCREEN MAP VIEW
+        var showFullRunScreen by remember { mutableStateOf(false) }
+
         var showAllActivities by remember { mutableStateOf(false) }
-        var selectedRun by remember { mutableStateOf<RunEntity?>(null) } // Controls the Dialog
+        var selectedRun by remember { mutableStateOf<RunEntity?>(null) }
 
         val recentRuns by viewModel.allRuns.collectAsState()
         val totalDistance by viewModel.totalDistance.collectAsState()
@@ -50,7 +68,6 @@ fun MainScreen(viewModel: RunViewModel = viewModel()) {
         val permissionLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestMultiplePermissions()
         ) { }
-
         LaunchedEffect(Unit) {
             val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.CAMERA)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) perms.add(Manifest.permission.ACTIVITY_RECOGNITION)
@@ -58,11 +75,16 @@ fun MainScreen(viewModel: RunViewModel = viewModel()) {
         }
 
         // --- MAIN UI STRUCTURE ---
-        if (isRunActive) {
+        if (showFullRunScreen) {
+            // Screen handles map logic. We don't force start here.
             RunSessionScreen(
+                viewModel = viewModel,
                 onStopClick = { runData ->
                     viewModel.saveRun(runData)
-                    isRunActive = false
+                    showFullRunScreen = false
+                },
+                onBackClick = {
+                    showFullRunScreen = false
                 }
             )
         } else if (showAllActivities) {
@@ -72,74 +94,122 @@ fun MainScreen(viewModel: RunViewModel = viewModel()) {
             )
         } else {
             // DASHBOARD
-            Scaffold(
-                containerColor = MaterialTheme.colorScheme.background,
-                topBar = { AppHeader() },
-                bottomBar = {
-                    BottomAppBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 8.dp) {
-                        IconButton(onClick = {}, modifier = Modifier.weight(1f)) { Icon(Icons.Default.History, "History", tint = Color.Gray) }
-                        Spacer(Modifier.weight(1f))
-                        IconButton(onClick = {}, modifier = Modifier.weight(1f)) { Icon(Icons.Default.Person, "Profile", tint = Color.Gray) }
-                    }
-                },
-                floatingActionButton = {
-                    FloatingActionButton(
-                        onClick = { isRunActive = true },
-                        containerColor = MaterialTheme.colorScheme.primary,
-                        shape = CircleShape,
-                        modifier = Modifier.size(80.dp).offset(y = 50.dp)
-                    ) {
-                        Icon(Icons.Default.DirectionsRun, null, modifier = Modifier.size(40.dp), tint = Color.Black)
-                    }
-                },
-                floatingActionButtonPosition = FabPosition.Center
-            ) { paddingValues ->
-                Column(
-                    modifier = Modifier.padding(paddingValues).padding(horizontal = 20.dp).fillMaxSize()
-                ) {
-                    Spacer(modifier = Modifier.height(10.dp))
-                    Text("READY TO RUN?", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.Gray)
-                    Spacer(modifier = Modifier.height(20.dp))
-
-                    // GOAL CARD
-                    Card(
-                        modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp),
-                        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                        shape = RoundedCornerShape(16.dp)
-                    ) {
-                        Column(modifier = Modifier.padding(24.dp)) {
-                            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                Text("Weekly Goal", color = Color.Gray)
-                                Text("10 km", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                            }
-                            Spacer(modifier = Modifier.height(16.dp))
-                            val progress = ((totalDistance ?: 0f) / 10f).coerceIn(0f, 1f)
-                            LinearProgressIndicator(
-                                progress = progress,
-                                modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp)),
-                                color = MaterialTheme.colorScheme.primary,
-                                trackColor = Color.DarkGray
+            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+                // 1. THE BLUE HEADER BACKGROUND SHAPE
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(280.dp)
+                        .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
+                        .background(
+                            brush = Brush.verticalGradient(
+                                colors = listOf(HeaderBlueStart, HeaderBlueEnd)
                             )
-                            Text("%.1f km done".format(totalDistance ?: 0f), fontSize = 12.sp, color = Color.Gray, modifier = Modifier.padding(top = 8.dp))
-                        }
-                    }
+                        )
+                )
 
-                    // HEADER
-                    Row(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                        Text("Recent Activity", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
-                        TextButton(onClick = { showAllActivities = true }) {
-                            Text("All", color = Color.Gray)
+                // 2. THE SCAFFOLD
+                Scaffold(
+                    containerColor = Color.Transparent,
+                    topBar = { AppHeader(whiteText = true) },
+                    bottomBar = {
+                        BottomAppBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 8.dp) {
+                            IconButton(onClick = {}, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Default.Home, "Home", tint = MaterialTheme.colorScheme.primary)
+                            }
+                            Spacer(Modifier.weight(1f))
+                            IconButton(onClick = {}, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Default.Person, "Profile", tint = MediumGray)
+                            }
                         }
-                    }
+                    },
+                    floatingActionButton = {
+                        // Only show FAB if run is NOT active (READY state)
+                        if (!isRunActive) {
+                            FloatingActionButton(
+                                onClick = {
+                                    // Just open the screen. Do NOT auto-start.
+                                    showFullRunScreen = true
+                                },
+                                containerColor = MaterialTheme.colorScheme.primary,
+                                contentColor = White,
+                                shape = CircleShape,
+                                modifier = Modifier.size(70.dp).offset(y = 50.dp)
+                            ) {
+                                Icon(Icons.Default.DirectionsRun, null, modifier = Modifier.size(35.dp))
+                            }
+                        }
+                    },
+                    floatingActionButtonPosition = FabPosition.Center
+                ) { paddingValues ->
+                    Column(
+                        modifier = Modifier
+                            .padding(paddingValues)
+                            .padding(horizontal = 20.dp)
+                            .fillMaxSize()
+                    ) {
+                        Spacer(modifier = Modifier.height(10.dp))
+                        Text("READY TO RUN?", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = White.copy(alpha = 0.9f))
+                        Spacer(modifier = Modifier.height(30.dp))
 
-                    // RECENT ACTIVITY PANEL
-                    RecentActivityPanel(runs = recentRuns, onItemClick = { run -> selectedRun = run })
+                        IconButton(onClick = {
+                            auth.signOut() // 1. Tell Firebase to Log Out
+                            onSignOut()    // 2. Tell the App to switch screens
+                        }) {
+                            Icon(
+                                imageVector = Icons.Default.ExitToApp,
+                                contentDescription = "Logout",
+                                tint = Color.Red
+                            )
+                        }
+
+                        Card(
+                            modifier = Modifier.fillMaxWidth().padding(bottom = 25.dp),
+                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+                            shape = RoundedCornerShape(24.dp),
+                            elevation = CardDefaults.cardElevation(8.dp)
+                        ) {
+                            Column(modifier = Modifier.padding(24.dp)) {
+                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                                    Text("Weekly Goal", color = MediumGray)
+                                    Text("10 km", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
+                                }
+                                Spacer(modifier = Modifier.height(16.dp))
+                                val progress = ((totalDistance ?: 0f) / 10f).coerceIn(0f, 1f)
+                                LinearProgressIndicator(
+                                    progress = progress,
+                                    modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp)),
+                                    color = MaterialTheme.colorScheme.primary,
+                                    trackColor = NearWhite
+                                )
+                                Text("%.1f km done".format(totalDistance ?: 0f), fontSize = 12.sp, color = MediumGray, modifier = Modifier.padding(top = 8.dp))
+                            }
+                        }
+
+                        // CURRENT SESSION PANEL (Only if run is active)
+                        if (isRunActive) {
+                            CurrentSessionPanel(
+                                duration = currentDuration,
+                                distance = currentDistance,
+                                calories = currentCalories,
+                                onClick = { showFullRunScreen = true }
+                            )
+                            Spacer(modifier = Modifier.height(20.dp))
+                        }
+
+                        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                            Text("Recent Activity", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                            TextButton(onClick = { showAllActivities = true }) {
+                                Text("See All", color = MaterialTheme.colorScheme.primary)
+                            }
+                        }
+
+                        RecentActivityPanel(runs = recentRuns, onItemClick = { run -> selectedRun = run })
+                    }
                 }
             }
         }
 
-        // --- THE POPUP DIALOG LOGIC ---
-        // This sits "on top" of everything else
         if (selectedRun != null) {
             RunDetailDialog(
                 run = selectedRun!!,
@@ -153,20 +223,91 @@ fun MainScreen(viewModel: RunViewModel = viewModel()) {
     }
 }
 
+// --- HELPER COMPONENTS ---
+
+@Composable
+fun CurrentSessionPanel(
+    duration: Long,
+    distance: Float,
+    calories: Int,
+    onClick: () -> Unit
+) {
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable { onClick() },
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.primary),
+        shape = RoundedCornerShape(24.dp),
+        elevation = CardDefaults.cardElevation(8.dp)
+    ) {
+        Row(
+            modifier = Modifier
+                .padding(20.dp)
+                .fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceBetween,
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Box(
+                    modifier = Modifier
+                        .size(50.dp)
+                        .background(Color.White, CircleShape),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.DirectionsRun,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(30.dp)
+                    )
+                }
+                Spacer(modifier = Modifier.width(16.dp))
+                Column {
+                    Text(
+                        text = "Current Session",
+                        color = Color.White.copy(alpha = 0.8f),
+                        fontSize = 14.sp
+                    )
+                    Text(
+                        text = formatDurationMain(duration),
+                        color = Color.White,
+                        fontSize = 20.sp,
+                        fontWeight = FontWeight.Bold
+                    )
+                }
+            }
+            Column(horizontalAlignment = Alignment.End) {
+                Text(
+                    text = "%.2f km".format(distance),
+                    color = Color.White,
+                    fontSize = 18.sp,
+                    fontWeight = FontWeight.Bold
+                )
+                Text(
+                    text = "$calories kcal",
+                    color = Color.White.copy(alpha = 0.8f),
+                    fontSize = 14.sp
+                )
+            }
+        }
+    }
+}
+
 @Composable
 fun RecentActivityPanel(runs: List<RunEntity>, onItemClick: (RunEntity) -> Unit) {
     val topRuns = runs.take(3)
     if (topRuns.isNotEmpty()) {
         Card(
-            colors = CardDefaults.cardColors(containerColor = Color(0xFF1C1C1E)),
-            shape = RoundedCornerShape(16.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            shape = RoundedCornerShape(24.dp),
+            elevation = CardDefaults.cardElevation(4.dp),
             modifier = Modifier.fillMaxWidth()
         ) {
             Column {
                 topRuns.forEachIndexed { index, run ->
                     RecentActivityItem(run = run, onClick = { onItemClick(run) })
                     if (index < topRuns.size - 1) {
-                        HorizontalDivider(modifier = Modifier.padding(start = 86.dp, end = 16.dp), thickness = 1.dp, color = Color.DarkGray)
+                        HorizontalDivider(modifier = Modifier.padding(start = 86.dp, end = 16.dp), thickness = 1.dp, color = LightGrayDivider)
                     }
                 }
             }
@@ -183,9 +324,8 @@ fun RecentActivityItem(run: RunEntity, onClick: () -> Unit) {
             .padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
-        // MAP IMAGE
         Box(
-            modifier = Modifier.size(70.dp).clip(RoundedCornerShape(12.dp)).background(Color.DarkGray),
+            modifier = Modifier.size(70.dp).clip(RoundedCornerShape(16.dp)).background(NearWhite),
             contentAlignment = Alignment.Center
         ) {
             if (run.imagePath != null) {
@@ -198,30 +338,36 @@ fun RecentActivityItem(run: RunEntity, onClick: () -> Unit) {
                         modifier = Modifier.fillMaxSize()
                     )
                 } else {
-                    Icon(Icons.Default.Map, null, tint = Color.Gray)
+                    Icon(Icons.Default.Map, null, tint = MediumGray)
                 }
             } else {
-                Icon(Icons.Default.Map, null, tint = Color.Gray)
+                Icon(Icons.Default.Map, null, tint = MediumGray)
             }
         }
-
         Spacer(modifier = Modifier.width(16.dp))
-
-        // STATS
         Column(modifier = Modifier.weight(1f)) {
             val dateFormat = SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault())
-            Text(dateFormat.format(Date(run.timestamp)), fontSize = 12.sp, color = Color.LightGray)
-            Text("%.2f km".format(run.distanceKm), fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.White)
+            Text(dateFormat.format(Date(run.timestamp)), fontSize = 12.sp, color = MediumGray)
+            Text("%.2f km".format(run.distanceKm), fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
             Spacer(modifier = Modifier.height(4.dp))
             Row {
-                Text(formatDurationMain(run.durationMillis), fontSize = 12.sp, color = Color.LightGray)
-                Spacer(modifier = Modifier.width(10.dp))
-                Text("${run.caloriesBurned} kcal", fontSize = 12.sp, color = Color.LightGray)
-                Spacer(modifier = Modifier.width(10.dp))
-                Text("%.1f km/h".format(run.avgSpeedKmh), fontSize = 12.sp, color = Color.LightGray)
+                SmallStat(Icons.Default.Schedule, formatDurationMain(run.durationMillis))
+                Spacer(modifier = Modifier.width(12.dp))
+                SmallStat(Icons.Default.LocalFireDepartment, "${run.caloriesBurned} kcal")
+                Spacer(modifier = Modifier.width(12.dp))
+                SmallStat(Icons.Default.Speed, "%.1f".format(run.avgSpeedKmh))
             }
         }
         Icon(Icons.Default.KeyboardArrowRight, null, tint = MaterialTheme.colorScheme.primary)
+    }
+}
+
+@Composable
+fun SmallStat(icon: androidx.compose.ui.graphics.vector.ImageVector, text: String) {
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(icon, null, tint = MediumGray, modifier = Modifier.size(14.dp))
+        Spacer(modifier = Modifier.width(4.dp))
+        Text(text, fontSize = 12.sp, color = MediumGray)
     }
 }
 
@@ -233,21 +379,26 @@ fun formatDurationMain(millis: Long): String {
 }
 
 @Composable
-fun AppHeader() {
+fun AppHeader(whiteText: Boolean = false) {
+    val auth = FirebaseAuth.getInstance()
+    val user = auth.currentUser
+
+    // 2. Get the name (If name is empty, use "Runner" as backup)
+    val displayName = user?.displayName ?: "Runner"
     Row(
-        modifier = Modifier.fillMaxWidth().padding(20.dp),
+        modifier = Modifier.fillMaxWidth().padding(20.dp).statusBarsPadding(),
         horizontalArrangement = Arrangement.SpaceBetween,
         verticalAlignment = Alignment.CenterVertically
     ) {
         Column {
-            Text("Hello,", color = Color.Gray)
-            Text("Runner", color = Color.Black, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text("Hello,", color = if (whiteText) White.copy(alpha = 0.8f) else MediumGray)
+            Text("$displayName", color = if (whiteText) White else MaterialTheme.colorScheme.onBackground, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         }
         Box(
-            modifier = Modifier.size(40.dp).background(MaterialTheme.colorScheme.surface, CircleShape),
+            modifier = Modifier.size(45.dp).background(White.copy(alpha = 0.2f), CircleShape),
             contentAlignment = Alignment.Center
         ) {
-            Icon(Icons.Default.Person, contentDescription = null, tint = MaterialTheme.colorScheme.primary)
+            Icon(Icons.Default.Person, contentDescription = null, tint = if(whiteText) White else MaterialTheme.colorScheme.primary)
         }
     }
 }

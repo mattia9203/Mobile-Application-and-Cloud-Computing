@@ -3,6 +3,7 @@ plugins {
     alias(libs.plugins.kotlin.android)
     alias(libs.plugins.kotlin.compose)
     id("com.google.devtools.ksp") version "2.0.21-1.0.25"
+    id("com.google.gms.google-services")
 }
 
 android {
@@ -75,7 +76,9 @@ dependencies {
     implementation("androidx.room:room-ktx:2.6.1")
     // Note: You might need 'kapt' or 'ksp' plugin for Room compiler later
 
-    // --- REQ 2 & 8: Firebase (Add this later via Tools > Firebase to avoid setup errors now) ---
+    // --- REQ 2 & 8: Firebase ---
+    implementation(platform("com.google.firebase:firebase-bom:34.8.0"))
+    implementation("com.google.firebase:firebase-auth")
 
     // Debugging
     debugImplementation("androidx.compose.ui:ui-tooling")

@@ -3,7 +3,7 @@ package com.example.runapp
 import android.graphics.BitmapFactory
 import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
-import androidx.compose.foundation.clickable // <--- ADDED IMPORT
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
@@ -23,6 +23,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import com.example.runapp.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -35,23 +36,15 @@ fun RunDetailDialog(
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Card(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(550.dp),
-            shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
-            elevation = CardDefaults.cardElevation(8.dp)
+            modifier = Modifier.fillMaxWidth().height(600.dp),
+            shape = RoundedCornerShape(28.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), // White
+            elevation = CardDefaults.cardElevation(16.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // --- TOP: MAP IMAGE & BUTTONS ---
-                Box(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .weight(1.2f)
-                        .background(Color.LightGray)
-                ) {
-                    // 1. Map Image
+                // --- TOP: MAP IMAGE ---
+                Box(modifier = Modifier.fillMaxWidth().weight(1.1f).background(NearWhite)) {
                     if (run.imagePath != null) {
                         val bitmap = remember(run.imagePath) { BitmapFactory.decodeFile(run.imagePath) }
                         if (bitmap != null) {
@@ -63,61 +56,35 @@ fun RunDetailDialog(
                             )
                         }
                     } else {
-                        // Fallback
                         Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Map, null, tint = Color.Gray, modifier = Modifier.size(50.dp))
+                            Icon(Icons.Default.Map, null, tint = MediumGray, modifier = Modifier.size(50.dp))
                         }
                     }
-
-                    // 2. Buttons
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(16.dp),
-                        horizontalArrangement = Arrangement.SpaceBetween
-                    ) {
+                    // Close / Delete Buttons
+                    Row(modifier = Modifier.fillMaxWidth().padding(16.dp).statusBarsPadding(), horizontalArrangement = Arrangement.SpaceBetween) {
                         SmallIconButton(Icons.Default.Close, onClick = onDismiss)
-                        SmallIconButton(Icons.Default.Delete, onClick = onDelete, tint = Color.Red)
+                        SmallIconButton(Icons.Default.Delete, onClick = onDelete, tint = RedError)
                     }
                 }
 
-                // --- BOTTOM: STATS ---
+                // --- BOTTOM: STATS (Black text, Blue icons) ---
                 Column(
-                    modifier = Modifier
-                        .weight(0.8f)
-                        .fillMaxWidth()
-                        .padding(horizontal = 24.dp, vertical = 16.dp),
+                    modifier = Modifier.weight(0.9f).fillMaxWidth().padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center
+                    verticalArrangement = Arrangement.SpaceAround
                 ) {
-                    val dateFormat = SimpleDateFormat("MMMM dd, yyyy", Locale.getDefault())
-                    Text(
-                        text = dateFormat.format(Date(run.timestamp)),
-                        fontSize = 14.sp,
-                        color = Color.Gray
-                    )
+                    val dateFormat = SimpleDateFormat("EEEE, MMMM dd, yyyy • HH:mm", Locale.getDefault())
+                    Text(text = dateFormat.format(Date(run.timestamp)), fontSize = 14.sp, color = MediumGray)
 
-                    Spacer(modifier = Modifier.height(8.dp))
+                    Text(text = formatDurationBig(run.durationMillis), fontSize = 48.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
 
-                    Text(
-                        text = formatDurationBig(run.durationMillis),
-                        fontSize = 40.sp,
-                        fontWeight = FontWeight.Bold,
-                        color = Color.Black
-                    )
-
-                    Spacer(modifier = Modifier.height(24.dp))
-
-                    Row(
-                        modifier = Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.SpaceEvenly,
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        StatColumn(Icons.Default.DirectionsRun, Color(0xFFFFA000), "%.2f".format(run.distanceKm), "km")
-                        VerticalDivider(height = 30.dp)
-                        StatColumn(Icons.Default.LocalFireDepartment, Color(0xFFFF5722), "${run.caloriesBurned}", "kcal")
-                        VerticalDivider(height = 30.dp)
-                        StatColumn(Icons.Default.Bolt, Color(0xFFFFC107), "%.2f".format(run.avgSpeedKmh), "km/hr")
+                    Row(modifier = Modifier.fillMaxWidth().padding(top=16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
+                        // All icons are now Primary Blue
+                        StatColumn(Icons.Default.DirectionsRun, MaterialTheme.colorScheme.primary, "%.2f".format(run.distanceKm), "km")
+                        VerticalDivider(height = 40.dp)
+                        StatColumn(Icons.Default.LocalFireDepartment, MaterialTheme.colorScheme.primary, "${run.caloriesBurned}", "kcal")
+                        VerticalDivider(height = 40.dp)
+                        StatColumn(Icons.Default.Speed, MaterialTheme.colorScheme.primary, "%.1f".format(run.avgSpeedKmh), "km/h")
                     }
                 }
             }
@@ -125,43 +92,32 @@ fun RunDetailDialog(
     }
 }
 
-// --- HELPER COMPONENTS ---
-
+// Helpers match the new theme
 @Composable
-fun SmallIconButton(icon: ImageVector, onClick: () -> Unit, tint: Color = Color.Black) {
-    Box(
-        modifier = Modifier
-            .size(40.dp)
-            .background(Color.White.copy(alpha = 0.8f), CircleShape)
-            .clip(CircleShape)
-            .clickable { onClick() }, // <--- FIXED: Just .clickable, no extra package path
-        contentAlignment = Alignment.Center
-    ) {
-        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+fun SmallIconButton(icon: ImageVector, onClick: () -> Unit, tint: Color = MaterialTheme.colorScheme.onBackground) {
+    Box(modifier = Modifier.size(44.dp).background(White, CircleShape).clip(CircleShape).clickable { onClick() }, contentAlignment = Alignment.Center) {
+        Icon(icon, null, tint = tint, modifier = Modifier.size(22.dp))
     }
 }
 
 @Composable
 fun StatColumn(icon: ImageVector, iconColor: Color, value: String, unit: String) {
     Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(icon, null, tint = iconColor, modifier = Modifier.size(24.dp))
-        Spacer(modifier = Modifier.height(4.dp))
-        Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-        Text(unit, fontSize = 12.sp, color = Color.Gray)
+        Icon(icon, null, tint = iconColor, modifier = Modifier.size(30.dp))
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+        Text(unit, fontSize = 14.sp, color = MediumGray)
     }
 }
 
 @Composable
 fun VerticalDivider(height: androidx.compose.ui.unit.Dp) {
-    Box(modifier = Modifier.height(height).width(1.dp).background(Color.LightGray))
+    Box(modifier = Modifier.height(height).width(1.dp).background(LightGrayDivider))
 }
 
-// Make sure formatDurationBig is defined here or imported
-// If you deleted it from RunDetailScreen, paste it here:
 fun formatDurationBig(millis: Long): String {
     val hours = TimeUnit.MILLISECONDS.toHours(millis)
     val minutes = TimeUnit.MILLISECONDS.toMinutes(millis) % 60
     val seconds = TimeUnit.MILLISECONDS.toSeconds(millis) % 60
-    return if (hours > 0) String.format("%02d:%02d:%02d", hours, minutes, seconds)
-    else String.format("%02d:%02d", minutes, seconds)
+    return if (hours > 0) String.format("%02d:%02d:%02d", hours, minutes, seconds) else String.format("%02d:%02d", minutes, seconds)
 }

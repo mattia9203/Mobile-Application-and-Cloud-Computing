@@ -7,7 +7,8 @@ import androidx.room.RoomDatabase
 
 @Database(entities = [RunEntity::class], version = 1, exportSchema = false)
 abstract class RunDatabase : RoomDatabase() {
-    abstract fun dao(): RunDao
+
+    abstract fun runDao(): RunDao
 
     companion object {
         @Volatile
@@ -15,11 +16,13 @@ abstract class RunDatabase : RoomDatabase() {
 
         fun getDatabase(context: Context): RunDatabase {
             return INSTANCE ?: synchronized(this) {
-                Room.databaseBuilder(
+                val instance = Room.databaseBuilder(
                     context.applicationContext,
                     RunDatabase::class.java,
                     "run_database"
-                ).build().also { INSTANCE = it }
+                ).build()
+                INSTANCE = instance
+                instance
             }
         }
     }

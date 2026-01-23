@@ -15,20 +15,19 @@ class StepCounter(context: Context) {
 
     val stepFlow: Flow<Int> = callbackFlow {
         if (stepSensor == null) {
-            trySend(0) // No sensor found (Emulator case)
+            trySend(0) // No sensor available
             close()
             return@callbackFlow
         }
 
         val listener = object : SensorEventListener {
             override fun onSensorChanged(event: SensorEvent?) {
-                // When the sensor detects a step, send "1"
-                trySend(1)
+                if (event != null) {
+                    // Step detector usually returns 1.0 for every step
+                    trySend(event.values[0].toInt())
+                }
             }
-
-            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {
-                // Not needed for step detection
-            }
+            override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
 
         sensorManager.registerListener(listener, stepSensor, SensorManager.SENSOR_DELAY_UI)

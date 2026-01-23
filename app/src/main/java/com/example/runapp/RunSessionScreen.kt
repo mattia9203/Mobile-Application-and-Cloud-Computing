@@ -1,9 +1,7 @@
 package com.example.runapp
 
-import android.annotation.SuppressLint
 import android.content.Context
 import android.graphics.Bitmap
-import android.location.Location
 import android.os.Looper
 import androidx.compose.animation.core.*
 import androidx.compose.foundation.Image
@@ -14,18 +12,24 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
+import androidx.compose.material.icons.rounded.Pause
+import androidx.compose.material.icons.rounded.PlayArrow
+import androidx.compose.material.icons.rounded.Stop
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.google.android.gms.location.*
+import androidx.compose.ui.zIndex
 import com.google.android.gms.maps.CameraUpdateFactory
 import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.model.CameraPosition
@@ -44,186 +48,135 @@ import kotlinx.coroutines.launch
 import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
-
-enum class RunState {
-    READY, RUNNING, PAUSED
-}
+import com.example.runapp.ui.theme.*
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RunSessionScreen(
-    onStopClick: (RunEntity) -> Unit
+    viewModel: RunViewModel,
+    onStopClick: (RunEntity) -> Unit,
+    onBackClick: () -> Unit
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // --- STATE MANAGEMENT ---
-    var runState by remember { mutableStateOf(RunState.READY) }
+    // --- OBSERVE VIEWMODEL ---
+    val runState by viewModel.runState.collectAsState()
+    val durationMillis by viewModel.currentDuration.collectAsState()
+    val distanceKm by viewModel.currentDistance.collectAsState()
+    val currentSpeedKmh by viewModel.currentSpeed.collectAsState()
+    val calories by viewModel.currentCalories.collectAsState()
 
-    // Stats
-    var durationMillis by remember { mutableStateOf(0L) }
-    var distanceKm by remember { mutableStateOf(0f) }
-    var currentSpeedKmh by remember { mutableStateOf(0f) }
-    var calories by remember { mutableStateOf(0) }
+    // Map Data
+    val currentLatLng by viewModel.currentLocation.collectAsState()
+    val pathPoints by viewModel.pathPoints.collectAsState()
 
-    // Timer Logic
-    var startTime by remember { mutableStateOf(0L) }
-    var accumulatedTime by remember { mutableStateOf(0L) }
-
-    // Map & Location
-    var currentLatLng by remember { mutableStateOf<LatLng?>(null) }
-    var pathPoints by remember { mutableStateOf<List<LatLng>>(emptyList()) }
-    var lastLocationTimestamp by remember { mutableStateOf(System.currentTimeMillis()) }
-
-    // UI
+    // Local UI State
     var googleMapRef by remember { mutableStateOf<GoogleMap?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var isSnapshotMode by remember { mutableStateOf(false) }
-    var selectedTab by remember { mutableStateOf(0) }
-    var lastCapturedPhoto by remember { mutableStateOf<Bitmap?>(null) }
+    var steps by remember { mutableStateOf(0) }
 
-    // --- TIMER LOOP ---
+    // Start Location Updates Immediately
+    LaunchedEffect(Unit) {
+        viewModel.startLocationUpdates()
+    }
+
+    // Step Counter
+    val stepCounter = remember { StepCounter(context) }
     LaunchedEffect(runState) {
         if (runState == RunState.RUNNING) {
-            startTime = System.currentTimeMillis()
-            while (runState == RunState.RUNNING) {
-                durationMillis = accumulatedTime + (System.currentTimeMillis() - startTime)
-                if (System.currentTimeMillis() - lastLocationTimestamp > 3000) {
-                    currentSpeedKmh = 0f
-                }
-                delay(100)
-            }
-        } else if (runState == RunState.PAUSED) {
-            accumulatedTime += System.currentTimeMillis() - startTime
+            stepCounter.stepFlow.collect { steps += it }
         }
     }
 
-    // --- LOCATION TRACKING ---
-    val locationManager = remember {
-        LocationManager(context) { distanceDeltaKm, newSpeed, newPos ->
-            currentLatLng = newPos
+    // --- MAIN UI ---
+    Box(modifier = Modifier.fillMaxSize()) {
 
-            if (runState == RunState.RUNNING) {
-                distanceKm += distanceDeltaKm
-                currentSpeedKmh = newSpeed
-                calories = (distanceKm * 70).toInt()
-                pathPoints = pathPoints + newPos
-                lastLocationTimestamp = System.currentTimeMillis()
-            }
+        // 1. MAP
+        MapWithRunnerIcon(
+            currentLocation = currentLatLng,
+            currentSpeedKmh = currentSpeedKmh,
+            pathPoints = pathPoints,
+            isSnapshotMode = isSnapshotMode,
+            onMapLoaded = { googleMapRef = it }
+        )
+
+        // 2. BACK BUTTON
+        Box(
+            modifier = Modifier
+                .padding(start = 20.dp, top = 40.dp)
+                .size(45.dp)
+                .align(Alignment.TopStart)
+                .zIndex(2f)
+                .shadow(elevation = 4.dp, shape = CircleShape)
+                .clip(CircleShape)
+                .background(Color.White)
+                .clickable {
+                    onBackClick()
+                },
+            contentAlignment = Alignment.Center
+        ) {
+            Icon(Icons.Default.KeyboardArrowLeft, "Back", tint = Color.Black)
         }
-    }
 
-    DisposableEffect(Unit) {
-        locationManager.startTracking()
-        onDispose { locationManager.stopTracking() }
-    }
-
-    Scaffold(containerColor = Color.Black) { padding ->
-        Box(modifier = Modifier.padding(padding).fillMaxSize()) {
-            Column(modifier = Modifier.fillMaxSize()) {
-
-                // 1. TIMER
-                BigTimerText(durationMillis)
-
-                // 2. STATS
-                Row(modifier = Modifier.fillMaxWidth().padding(bottom = 20.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    StatItem(value = "%.2f".format(distanceKm), unit = "Km")
-                    StatItem(value = "%.1f".format(currentSpeedKmh), unit = "Km/h")
-                    StatItem(value = "$calories", unit = "Kcal")
+        // 3. BOTTOM PANEL
+        Box(
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .fillMaxWidth()
+                .padding(16.dp)
+                .zIndex(2f)
+        ) {
+            if (runState == RunState.READY) {
+                Button(
+                    onClick = { viewModel.startRun() },
+                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                    modifier = Modifier.fillMaxWidth().height(56.dp),
+                    shape = RoundedCornerShape(28.dp)
+                ) {
+                    Text("START RUNNING", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
-
-                // 3. TABS
-                Row(modifier = Modifier.fillMaxWidth().background(Color(0xFF1C1C1E)), horizontalArrangement = Arrangement.SpaceEvenly) {
-                    TabButton(Icons.Default.Map, "Map", selectedTab == 0) { selectedTab = 0 }
-                    TabButton(Icons.Default.CameraAlt, "Camera", selectedTab == 1) { selectedTab = 1 }
-                    TabButton(Icons.Default.Flag, "Goal", selectedTab == 2) { selectedTab = 2 }
-                }
-
-                // 4. CONTENT
-                Box(modifier = Modifier.weight(1f).fillMaxWidth()) {
-                    when (selectedTab) {
-                        0 -> MapWithRunnerIcon(currentLatLng, currentSpeedKmh, pathPoints, isSnapshotMode) { googleMapRef = it }
-                        1 -> {
-                            if (lastCapturedPhoto != null) {
-                                Box(Modifier.fillMaxSize()) {
-                                    Image(lastCapturedPhoto!!.asImageBitmap(), null, modifier = Modifier.fillMaxSize(), contentScale = androidx.compose.ui.layout.ContentScale.Crop)
-                                    IconButton(onClick = { lastCapturedPhoto = null }, modifier = Modifier.align(Alignment.TopEnd).padding(16.dp).background(Color.White, CircleShape)) { Icon(Icons.Default.Close, null) }
-                                }
-                            } else CameraScreen(onImageCaptured = { lastCapturedPhoto = it }, onError = {})
-                        }
-                        2 -> {
-                            Column(Modifier.fillMaxSize().background(Color.White), verticalArrangement = Arrangement.Center, horizontalAlignment = Alignment.CenterHorizontally) {
-                                Text("Weekly Goal: 10 km", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.Black)
-                                LinearProgressIndicator(progress = (distanceKm / 10f).coerceIn(0f, 1f), modifier = Modifier.padding(top = 16.dp).width(200.dp).height(8.dp), color = MaterialTheme.colorScheme.primary)
+            } else {
+                RunInfoPanel(
+                    durationMillis = durationMillis,
+                    distanceKm = distanceKm,
+                    calories = calories,
+                    speedKmh = currentSpeedKmh,
+                    runState = runState,
+                    isSaving = isSaving,
+                    onTogglePause = {
+                        if (runState == RunState.RUNNING) viewModel.pauseRun() else viewModel.resumeRun()
+                    },
+                    onStop = {
+                        // THIS FUNCTION HANDLES THE SNAPSHOT LOGIC
+                        finishRun(
+                            scope = scope,
+                            isSaving = isSaving,
+                            mapRef = googleMapRef,
+                            context = context,
+                            dist = distanceKm,
+                            speed = currentSpeedKmh,
+                            time = durationMillis,
+                            cals = calories,
+                            pathPoints = pathPoints,
+                            onStartSave = {
+                                isSaving = true
+                                isSnapshotMode = true // Stops the camera from following the user
+                            },
+                            onResult = {
+                                viewModel.stopRun()
+                                onStopClick(it)
                             }
-                        }
+                        )
                     }
-                }
-
-                // 5. BUTTONS
-                Box(modifier = Modifier.fillMaxWidth().padding(24.dp).height(80.dp), contentAlignment = Alignment.Center) {
-                    when (runState) {
-                        RunState.READY -> {
-                            Button(
-                                onClick = { runState = RunState.RUNNING },
-                                colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                                modifier = Modifier.fillMaxWidth().height(56.dp),
-                                shape = RoundedCornerShape(28.dp)
-                            ) { Text("START RUN", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black) }
-                        }
-                        RunState.RUNNING -> {
-                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Button(
-                                    onClick = { runState = RunState.PAUSED },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFFFC107)),
-                                    modifier = Modifier.weight(1f).height(56.dp),
-                                    shape = RoundedCornerShape(28.dp)
-                                ) { Text("PAUSE", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black) }
-
-                                EndButton(isSaving) {
-                                    finishRun(scope, isSaving, googleMapRef, context, distanceKm, currentSpeedKmh, durationMillis, calories, pathPoints, // <--- PASS PATH POINTS
-                                        onStartSave = { isSaving = true; isSnapshotMode = true },
-                                        onResult = { onStopClick(it) })
-                                }
-                            }
-                        }
-                        RunState.PAUSED -> {
-                            Row(horizontalArrangement = Arrangement.spacedBy(16.dp)) {
-                                Button(
-                                    onClick = { runState = RunState.RUNNING },
-                                    colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF4CAF50)),
-                                    modifier = Modifier.weight(1f).height(56.dp),
-                                    shape = RoundedCornerShape(28.dp)
-                                ) { Text("RESUME", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White) }
-
-                                EndButton(isSaving) {
-                                    finishRun(scope, isSaving, googleMapRef, context, distanceKm, currentSpeedKmh, durationMillis, calories, pathPoints, // <--- PASS PATH POINTS
-                                        onStartSave = { isSaving = true; isSnapshotMode = true },
-                                        onResult = { onStopClick(it) })
-                                }
-                            }
-                        }
-                    }
-                }
+                )
             }
         }
     }
 }
 
-@Composable
-fun RowScope.EndButton(isSaving: Boolean, onClick: () -> Unit) {
-    Button(
-        onClick = onClick,
-        colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFD32F2F)),
-        modifier = Modifier.weight(1f).height(56.dp),
-        shape = RoundedCornerShape(28.dp)
-    ) {
-        if (isSaving) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
-        else Text("END", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-    }
-}
-
-// --- LOGIC HELPER: ZOOM TO FIT PATH ---
+// --- UPDATED FINISH RUN LOGIC (THE FIX) ---
 fun finishRun(
     scope: kotlinx.coroutines.CoroutineScope,
     isSaving: Boolean,
@@ -233,30 +186,37 @@ fun finishRun(
     speed: Float,
     time: Long,
     cals: Int,
-    pathPoints: List<LatLng>, // <--- NEW PARAMETER
+    pathPoints: List<LatLng>,
     onStartSave: () -> Unit,
     onResult: (RunEntity) -> Unit
 ) {
     if (isSaving) return
-    onStartSave()
+    onStartSave() // 1. Freeze the map tracking
 
     scope.launch {
-        // 1. ZOOM OUT TO FIT THE WHOLE RUN
+        // 2. Adjust Camera to fit the WHOLE PATH
         if (mapRef != null && pathPoints.isNotEmpty()) {
-            val builder = LatLngBounds.Builder()
-            pathPoints.forEach { builder.include(it) }
             try {
-                val bounds = builder.build()
-                // 100 pixels padding so the line isn't touching the edge
-                mapRef.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 100))
+                val boundsBuilder = LatLngBounds.Builder()
+                pathPoints.forEach { boundsBuilder.include(it) }
+                val bounds = boundsBuilder.build()
+
+                if (pathPoints.size > 1) {
+                    // Padding = 300 pixels to ensure the path isn't cut off by edges
+                    mapRef.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 300))
+                } else {
+                    // If only 1 point, just center on it
+                    mapRef.moveCamera(CameraUpdateFactory.newLatLngZoom(pathPoints[0], 16f))
+                }
             } catch (e: Exception) {
-                // Fails if pathPoints has only 1 point, ignore it
+                e.printStackTrace()
             }
         }
 
-        // 2. Wait for map to animate zoom & switch icon
-        delay(1500L)
+        // 3. Wait for the camera animation/tiles to load
+        delay(2000L)
 
+        // 4. Capture the pixels
         var savedPath: String? = null
         if (mapRef != null) savedPath = captureMapSnapshot(context, mapRef)
 
@@ -264,6 +224,111 @@ fun finishRun(
         val avgSpeed = if (hours > 0) dist / hours else 0f
 
         onResult(RunEntity(distanceKm = dist, avgSpeedKmh = avgSpeed, durationMillis = time, caloriesBurned = cals, imagePath = savedPath))
+    }
+}
+
+// --- HELPER COMPONENTS ---
+
+@Composable
+fun RunInfoPanel(
+    durationMillis: Long,
+    distanceKm: Float,
+    calories: Int,
+    speedKmh: Float,
+    runState: RunState,
+    isSaving: Boolean,
+    onTogglePause: () -> Unit,
+    onStop: () -> Unit
+) {
+    Card(
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White),
+        elevation = CardDefaults.cardElevation(10.dp),
+        modifier = Modifier.fillMaxWidth()
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) {
+            Text("Running Time", fontSize = 14.sp, color = Color.Gray)
+            Spacer(modifier = Modifier.height(4.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                Text(formatTime(durationMillis), fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
+                    if (runState == RunState.PAUSED) {
+                        FilledIconButton(onClick = onStop, colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFFD32F2F)), modifier = Modifier.size(56.dp)) {
+                            if (isSaving) CircularProgressIndicator(color = Color.White, modifier = Modifier.size(24.dp))
+                            else Icon(Icons.Rounded.Stop, null, tint = Color.White, modifier = Modifier.size(32.dp))
+                        }
+                    }
+                    FilledIconButton(onClick = onTogglePause, colors = IconButtonDefaults.filledIconButtonColors(containerColor = MaterialTheme.colorScheme.primary), modifier = Modifier.size(56.dp)) {
+                        Icon(imageVector = if (runState == RunState.RUNNING) Icons.Rounded.Pause else Icons.Rounded.PlayArrow, contentDescription = "Toggle", tint = Color.White, modifier = Modifier.size(32.dp))
+                    }
+                }
+            }
+            Spacer(modifier = Modifier.height(20.dp))
+            HorizontalDivider(thickness = 1.dp, color = Color(0xFFF0F0F0))
+            Spacer(modifier = Modifier.height(20.dp))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                PanelStatItem(Icons.Default.DirectionsRun, Color(0xFFFF9800), "%.2f".format(distanceKm), "km")
+                PanelVerticalDivider()
+                PanelStatItem(Icons.Default.LocalFireDepartment, Color(0xFFFF5722), "$calories", "kcal")
+                PanelVerticalDivider()
+                PanelStatItem(Icons.Default.Bolt, Color(0xFFFFC107), "%.2f".format(speedKmh), "km/hr")
+            }
+        }
+    }
+}
+
+@Composable
+fun PanelStatItem(icon: ImageVector, iconColor: Color, value: String, unit: String) {
+    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(icon, null, tint = iconColor, modifier = Modifier.size(18.dp))
+            Spacer(modifier = Modifier.width(4.dp))
+            Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+        }
+        Text(unit, fontSize = 12.sp, color = Color.Gray)
+    }
+}
+@Composable
+fun PanelVerticalDivider() { Box(modifier = Modifier.height(24.dp).width(1.dp).background(Color.LightGray)) }
+
+@Composable
+fun MapWithRunnerIcon(
+    currentLocation: LatLng?,
+    currentSpeedKmh: Float,
+    pathPoints: List<LatLng>,
+    isSnapshotMode: Boolean,
+    onMapLoaded: (GoogleMap) -> Unit
+) {
+    val defaultPos = LatLng(0.0, 0.0)
+    val cameraPositionState = rememberCameraPositionState { position = CameraPosition.fromLatLngZoom(defaultPos, 17f) }
+    val infiniteTransition = rememberInfiniteTransition(label = "runnerAnim")
+    val bounceOffset by infiniteTransition.animateFloat(initialValue = 0f, targetValue = -10f, animationSpec = infiniteRepeatable(tween(300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "bounce")
+    val actualBounce = if (!isSnapshotMode && currentSpeedKmh > 1.0f) bounceOffset else 0f
+
+    LaunchedEffect(currentLocation, isSnapshotMode) {
+        if (currentLocation != null && !isSnapshotMode) {
+            cameraPositionState.animate(update = CameraUpdateFactory.newLatLngZoom(currentLocation, 17f), durationMs = 1000)
+        }
+    }
+
+    GoogleMap(
+        modifier = Modifier.fillMaxSize(),
+        cameraPositionState = cameraPositionState,
+        properties = MapProperties(isMyLocationEnabled = false),
+        uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = false, compassEnabled = false)
+    ) {
+        MapEffect(Unit) { map -> onMapLoaded(map) }
+        if (pathPoints.isNotEmpty()) Polyline(points = pathPoints, color = MaterialTheme.colorScheme.primary, width = 15f)
+        if (currentLocation != null) {
+            key(isSnapshotMode) {
+                MarkerComposable(state = MarkerState(position = currentLocation)) {
+                    val iconVector = if (isSnapshotMode) Icons.Default.Place else Icons.Default.DirectionsRun
+                    val tintColor = if (isSnapshotMode) Color.Red else MaterialTheme.colorScheme.primary
+                    val size = if (isSnapshotMode) 40.dp else 36.dp
+                    Icon(imageVector = iconVector, contentDescription = "User", tint = tintColor, modifier = Modifier.size(size).offset(y = actualBounce.dp))
+                }
+            }
+        }
     }
 }
 
@@ -284,124 +349,9 @@ suspend fun captureMapSnapshot(context: Context, googleMap: GoogleMap): String? 
     }
 }
 
-// --- UI HELPERS (Unchanged) ---
-@Composable
-fun BigTimerText(millis: Long) {
-    Text(formatTime(millis), fontSize = 70.sp, fontWeight = FontWeight.Bold, color = Color.White, modifier = Modifier.fillMaxWidth().wrapContentWidth(Alignment.CenterHorizontally).padding(vertical = 10.dp))
-}
-
-@Composable
-fun StatItem(value: String, unit: String) {
-    Column(horizontalAlignment = Alignment.CenterHorizontally) {
-        Text(value, fontSize = 24.sp, fontWeight = FontWeight.Bold, color = Color.White)
-        Text(unit, fontSize = 14.sp, color = Color.Gray)
-    }
-}
-
-@Composable
-fun TabButton(icon: ImageVector, label: String, isSelected: Boolean, onClick: () -> Unit) {
-    val color = if (isSelected) MaterialTheme.colorScheme.primary else Color.Gray
-    Column(modifier = Modifier.clickable { onClick() }.padding(12.dp), horizontalAlignment = Alignment.CenterHorizontally) {
-        Icon(icon, label, tint = color)
-        if (isSelected) Box(Modifier.height(2.dp).width(40.dp).background(MaterialTheme.colorScheme.primary))
-    }
-}
-
 fun formatTime(millis: Long): String {
     val hours = TimeUnit.MILLISECONDS.toHours(millis)
     val minutes = TimeUnit.MILLISECONDS.toMinutes(millis) % 60
     val seconds = TimeUnit.MILLISECONDS.toSeconds(millis) % 60
     return String.format("%02d:%02d:%02d", hours, minutes, seconds)
-}
-
-// --- MAP COMPONENT ---
-@Composable
-fun MapWithRunnerIcon(
-    currentLocation: LatLng?,
-    currentSpeedKmh: Float,
-    pathPoints: List<LatLng>,
-    isSnapshotMode: Boolean,
-    onMapLoaded: (GoogleMap) -> Unit
-) {
-    if (currentLocation == null) {
-        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) { CircularProgressIndicator(color = MaterialTheme.colorScheme.primary) }
-        return
-    }
-
-    // UPDATED: If snapshot mode, don't force follow user anymore (so we can zoom out)
-    val cameraPositionState = rememberCameraPositionState { position = CameraPosition.fromLatLngZoom(currentLocation, 17f) }
-
-    val infiniteTransition = rememberInfiniteTransition(label = "runnerAnim")
-    val bounceOffset by infiniteTransition.animateFloat(initialValue = 0f, targetValue = -10f, animationSpec = infiniteRepeatable(tween(300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "bounce")
-    val actualBounce = if (!isSnapshotMode && currentSpeedKmh > 1.0f) bounceOffset else 0f
-
-    // UPDATED: Only animate camera to user if NOT in snapshot mode
-    LaunchedEffect(currentLocation, isSnapshotMode) {
-        if (!isSnapshotMode) {
-            cameraPositionState.animate(update = CameraUpdateFactory.newLatLngZoom(currentLocation, 17f), durationMs = 800)
-        }
-    }
-
-    GoogleMap(
-        modifier = Modifier.fillMaxSize(),
-        cameraPositionState = cameraPositionState,
-        properties = MapProperties(isMyLocationEnabled = false),
-        uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = false)
-    ) {
-        MapEffect(Unit) { map -> onMapLoaded(map) }
-        if (pathPoints.isNotEmpty()) Polyline(points = pathPoints, color = Color.Red, width = 15f)
-        key(isSnapshotMode) {
-            MarkerComposable(state = MarkerState(position = currentLocation), title = "Me") {
-                val iconVector = if (isSnapshotMode) Icons.Default.Place else Icons.Default.DirectionsRun
-                val tintColor = if (isSnapshotMode) Color.Red else Color.Black
-                val size = if (isSnapshotMode) 40.dp else 36.dp
-                Icon(imageVector = iconVector, contentDescription = "User", tint = tintColor, modifier = Modifier.size(size).offset(y = actualBounce.dp))
-            }
-        }
-    }
-}
-
-class LocationManager(
-    context: Context,
-    private val onLocationUpdate: (Float, Float, LatLng) -> Unit
-) {
-    private val fusedLocationClient = LocationServices.getFusedLocationProviderClient(context)
-    private var lastLocation: Location? = null
-
-    private val locationCallback = object : LocationCallback() {
-        override fun onLocationResult(result: LocationResult) {
-            for (location in result.locations) {
-                if (lastLocation != null) {
-                    val distanceGap = lastLocation!!.distanceTo(location)
-                    if (distanceGap > 1.0) {
-                        val timeGapSeconds = (location.time - lastLocation!!.time) / 1000.0
-                        var calculatedSpeedKmh = 0f
-                        if (timeGapSeconds > 0) {
-                            val speedMps = distanceGap / timeGapSeconds
-                            calculatedSpeedKmh = (speedMps * 3.6).toFloat()
-                        }
-                        if (calculatedSpeedKmh > 40f) calculatedSpeedKmh = 0f
-
-                        lastLocation = location
-                        val currentPos = LatLng(location.latitude, location.longitude)
-                        onLocationUpdate(distanceGap / 1000f, calculatedSpeedKmh, currentPos)
-                    }
-                } else {
-                    lastLocation = location
-                    val currentPos = LatLng(location.latitude, location.longitude)
-                    onLocationUpdate(0f, 0f, currentPos)
-                }
-            }
-        }
-    }
-
-    @SuppressLint("MissingPermission")
-    fun startTracking() {
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000).setMinUpdateDistanceMeters(2f).build()
-        fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
-    }
-
-    fun stopTracking() {
-        fusedLocationClient.removeLocationUpdates(locationCallback)
-    }
 }
