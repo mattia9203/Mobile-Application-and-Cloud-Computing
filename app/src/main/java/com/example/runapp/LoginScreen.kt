@@ -192,7 +192,7 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
                         onClick = {
                             if (isSignUpMode) {
                                 // TODO: Later we will pass name, weight, and height to the database here
-                                viewModel.signUp(email, password)
+                                viewModel.signUp(email, password, name, weight, height)
                             } else {
                                 viewModel.login(email, password)
                             }
