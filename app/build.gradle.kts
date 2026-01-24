@@ -74,6 +74,7 @@ dependencies {
     // --- REQ 10: Local Database (Room) ---
     implementation("androidx.room:room-runtime:2.6.1")
     implementation("androidx.room:room-ktx:2.6.1")
+    implementation("com.google.firebase:firebase-storage-ktx:20.3.0")
     // Note: You might need 'kapt' or 'ksp' plugin for Room compiler later
 
     // --- REQ 2 & 8: Firebase ---
@@ -99,6 +100,6 @@ dependencies {
 
     implementation("androidx.room:room-runtime:$room_version")
     implementation("androidx.room:room-ktx:$room_version")
-
+    implementation("io.coil-kt:coil-compose:2.5.0")
     ksp("androidx.room:room-compiler:$room_version")
 }

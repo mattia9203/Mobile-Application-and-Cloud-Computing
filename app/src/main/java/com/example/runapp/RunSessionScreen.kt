@@ -2,9 +2,7 @@ package com.example.runapp
 
 import android.content.Context
 import android.graphics.Bitmap
-import android.os.Looper
 import androidx.compose.animation.core.*
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -22,9 +20,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
-import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
@@ -35,14 +31,7 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
-import com.google.maps.android.compose.GoogleMap
-import com.google.maps.android.compose.MapEffect
-import com.google.maps.android.compose.MapProperties
-import com.google.maps.android.compose.MapUiSettings
-import com.google.maps.android.compose.MarkerComposable
-import com.google.maps.android.compose.MarkerState
-import com.google.maps.android.compose.Polyline
-import com.google.maps.android.compose.rememberCameraPositionState
+import com.google.maps.android.compose.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import java.io.File
@@ -50,7 +39,6 @@ import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 import com.example.runapp.ui.theme.*
 
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun RunSessionScreen(
     viewModel: RunViewModel,
@@ -67,7 +55,7 @@ fun RunSessionScreen(
     val currentSpeedKmh by viewModel.currentSpeed.collectAsState()
     val calories by viewModel.currentCalories.collectAsState()
 
-    // Map Data
+    // Map Data - FIXED: Direct collection (No .map error)
     val currentLatLng by viewModel.currentLocation.collectAsState()
     val pathPoints by viewModel.pathPoints.collectAsState()
 
@@ -75,19 +63,10 @@ fun RunSessionScreen(
     var googleMapRef by remember { mutableStateOf<GoogleMap?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var isSnapshotMode by remember { mutableStateOf(false) }
-    var steps by remember { mutableStateOf(0) }
 
-    // Start Location Updates Immediately
+    // Start Location Updates Immediately (Wakes up the map)
     LaunchedEffect(Unit) {
         viewModel.startLocationUpdates()
-    }
-
-    // Step Counter
-    val stepCounter = remember { StepCounter(context) }
-    LaunchedEffect(runState) {
-        if (runState == RunState.RUNNING) {
-            stepCounter.stepFlow.collect { steps += it }
-        }
     }
 
     // --- MAIN UI ---
@@ -129,6 +108,7 @@ fun RunSessionScreen(
                 .zIndex(2f)
         ) {
             if (runState == RunState.READY) {
+                // START BUTTON (Restored)
                 Button(
                     onClick = { viewModel.startRun() },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
@@ -138,6 +118,7 @@ fun RunSessionScreen(
                     Text("START RUNNING", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             } else {
+                // STATS PANEL
                 RunInfoPanel(
                     durationMillis = durationMillis,
                     distanceKm = distanceKm,
@@ -149,7 +130,7 @@ fun RunSessionScreen(
                         if (runState == RunState.RUNNING) viewModel.pauseRun() else viewModel.resumeRun()
                     },
                     onStop = {
-                        // THIS FUNCTION HANDLES THE SNAPSHOT LOGIC
+                        // Handles Snapshot + Saving
                         finishRun(
                             scope = scope,
                             isSaving = isSaving,
@@ -162,11 +143,12 @@ fun RunSessionScreen(
                             pathPoints = pathPoints,
                             onStartSave = {
                                 isSaving = true
-                                isSnapshotMode = true // Stops the camera from following the user
+                                isSnapshotMode = true
                             },
-                            onResult = {
+                            onResult = { entity ->
                                 viewModel.stopRun()
-                                onStopClick(it)
+                                // Pass the entity (with local image path) back to MainScreen to save
+                                onStopClick(entity)
                             }
                         )
                     }
@@ -176,7 +158,7 @@ fun RunSessionScreen(
     }
 }
 
-// --- UPDATED FINISH RUN LOGIC (THE FIX) ---
+// --- SNAPSHOT & FINISH LOGIC (Restored) ---
 fun finishRun(
     scope: kotlinx.coroutines.CoroutineScope,
     isSaving: Boolean,
@@ -191,10 +173,10 @@ fun finishRun(
     onResult: (RunEntity) -> Unit
 ) {
     if (isSaving) return
-    onStartSave() // 1. Freeze the map tracking
+    onStartSave()
 
     scope.launch {
-        // 2. Adjust Camera to fit the WHOLE PATH
+        // 1. Move camera to fit path
         if (mapRef != null && pathPoints.isNotEmpty()) {
             try {
                 val boundsBuilder = LatLngBounds.Builder()
@@ -202,10 +184,8 @@ fun finishRun(
                 val bounds = boundsBuilder.build()
 
                 if (pathPoints.size > 1) {
-                    // Padding = 300 pixels to ensure the path isn't cut off by edges
                     mapRef.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 300))
                 } else {
-                    // If only 1 point, just center on it
                     mapRef.moveCamera(CameraUpdateFactory.newLatLngZoom(pathPoints[0], 16f))
                 }
             } catch (e: Exception) {
@@ -213,10 +193,10 @@ fun finishRun(
             }
         }
 
-        // 3. Wait for the camera animation/tiles to load
-        delay(2000L)
+        // 2. Wait for map to render
+        delay(1500L)
 
-        // 4. Capture the pixels
+        // 3. Take Screenshot
         var savedPath: String? = null
         if (mapRef != null) savedPath = captureMapSnapshot(context, mapRef)
 
@@ -227,7 +207,7 @@ fun finishRun(
     }
 }
 
-// --- HELPER COMPONENTS ---
+// --- HELPER COMPONENTS (Restored) ---
 
 @Composable
 fun RunInfoPanel(
@@ -288,6 +268,7 @@ fun PanelStatItem(icon: ImageVector, iconColor: Color, value: String, unit: Stri
         Text(unit, fontSize = 12.sp, color = Color.Gray)
     }
 }
+
 @Composable
 fun PanelVerticalDivider() { Box(modifier = Modifier.height(24.dp).width(1.dp).background(Color.LightGray)) }
 
@@ -301,6 +282,7 @@ fun MapWithRunnerIcon(
 ) {
     val defaultPos = LatLng(0.0, 0.0)
     val cameraPositionState = rememberCameraPositionState { position = CameraPosition.fromLatLngZoom(defaultPos, 17f) }
+
     val infiniteTransition = rememberInfiniteTransition(label = "runnerAnim")
     val bounceOffset by infiniteTransition.animateFloat(initialValue = 0f, targetValue = -10f, animationSpec = infiniteRepeatable(tween(300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "bounce")
     val actualBounce = if (!isSnapshotMode && currentSpeedKmh > 1.0f) bounceOffset else 0f
@@ -320,13 +302,11 @@ fun MapWithRunnerIcon(
         MapEffect(Unit) { map -> onMapLoaded(map) }
         if (pathPoints.isNotEmpty()) Polyline(points = pathPoints, color = MaterialTheme.colorScheme.primary, width = 15f)
         if (currentLocation != null) {
-            key(isSnapshotMode) {
-                MarkerComposable(state = MarkerState(position = currentLocation)) {
-                    val iconVector = if (isSnapshotMode) Icons.Default.Place else Icons.Default.DirectionsRun
-                    val tintColor = if (isSnapshotMode) Color.Red else MaterialTheme.colorScheme.primary
-                    val size = if (isSnapshotMode) 40.dp else 36.dp
-                    Icon(imageVector = iconVector, contentDescription = "User", tint = tintColor, modifier = Modifier.size(size).offset(y = actualBounce.dp))
-                }
+            MarkerComposable(state = MarkerState(position = currentLocation)) {
+                val iconVector = if (isSnapshotMode) Icons.Default.Place else Icons.Default.DirectionsRun
+                val tintColor = if (isSnapshotMode) Color.Red else MaterialTheme.colorScheme.primary
+                val size = if (isSnapshotMode) 40.dp else 36.dp
+                Icon(imageVector = iconVector, contentDescription = "User", tint = tintColor, modifier = Modifier.size(size).offset(y = actualBounce.dp))
             }
         }
     }

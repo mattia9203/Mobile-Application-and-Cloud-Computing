@@ -1,7 +1,5 @@
 package com.example.runapp
 
-import android.graphics.BitmapFactory
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -11,18 +9,18 @@ import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.window.Dialog
+import coil.compose.AsyncImage
 import com.example.runapp.ui.theme.*
 import java.text.SimpleDateFormat
 import java.util.*
@@ -38,36 +36,39 @@ fun RunDetailDialog(
         Card(
             modifier = Modifier.fillMaxWidth().height(600.dp),
             shape = RoundedCornerShape(28.dp),
-            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), // White
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
             elevation = CardDefaults.cardElevation(16.dp)
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // --- TOP: MAP IMAGE ---
+                // --- TOP: MAP IMAGE (UPDATED FOR CLOUD) ---
                 Box(modifier = Modifier.fillMaxWidth().weight(1.1f).background(NearWhite)) {
-                    if (run.imagePath != null) {
-                        val bitmap = remember(run.imagePath) { BitmapFactory.decodeFile(run.imagePath) }
-                        if (bitmap != null) {
-                            Image(
-                                bitmap = bitmap.asImageBitmap(),
-                                contentDescription = "Run Map",
-                                contentScale = ContentScale.Crop,
-                                modifier = Modifier.fillMaxSize()
-                            )
-                        }
-                    } else {
-                        Box(Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Icon(Icons.Default.Map, null, tint = MediumGray, modifier = Modifier.size(50.dp))
-                        }
-                    }
-                    // Close / Delete Buttons
-                    Row(modifier = Modifier.fillMaxWidth().padding(16.dp).statusBarsPadding(), horizontalArrangement = Arrangement.SpaceBetween) {
+
+                    // FIXED: Replaced BitmapFactory with AsyncImage (Coil)
+                    AsyncImage(
+                        model = run.imagePath,
+                        contentDescription = "Run Map",
+                        contentScale = ContentScale.Crop,
+                        modifier = Modifier.fillMaxSize(),
+                        // Shows the map icon if the image is loading or fails
+                        error = painterResource(id = android.R.drawable.ic_menu_mapmode),
+                        placeholder = painterResource(id = android.R.drawable.ic_menu_mapmode)
+                    )
+
+                    // Close / Delete Buttons overlay
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .padding(16.dp)
+                            .statusBarsPadding(),
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
                         SmallIconButton(Icons.Default.Close, onClick = onDismiss)
                         SmallIconButton(Icons.Default.Delete, onClick = onDelete, tint = RedError)
                     }
                 }
 
-                // --- BOTTOM: STATS (Black text, Blue icons) ---
+                // --- BOTTOM: STATS ---
                 Column(
                     modifier = Modifier.weight(0.9f).fillMaxWidth().padding(24.dp),
                     horizontalAlignment = Alignment.CenterHorizontally,
@@ -79,7 +80,6 @@ fun RunDetailDialog(
                     Text(text = formatDurationBig(run.durationMillis), fontSize = 48.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
 
                     Row(modifier = Modifier.fillMaxWidth().padding(top=16.dp), horizontalArrangement = Arrangement.SpaceEvenly) {
-                        // All icons are now Primary Blue
                         StatColumn(Icons.Default.DirectionsRun, MaterialTheme.colorScheme.primary, "%.2f".format(run.distanceKm), "km")
                         VerticalDivider(height = 40.dp)
                         StatColumn(Icons.Default.LocalFireDepartment, MaterialTheme.colorScheme.primary, "${run.caloriesBurned}", "kcal")
@@ -92,7 +92,8 @@ fun RunDetailDialog(
     }
 }
 
-// Helpers match the new theme
+// --- HELPERS ---
+
 @Composable
 fun SmallIconButton(icon: ImageVector, onClick: () -> Unit, tint: Color = MaterialTheme.colorScheme.onBackground) {
     Box(modifier = Modifier.size(44.dp).background(White, CircleShape).clip(CircleShape).clickable { onClick() }, contentAlignment = Alignment.Center) {

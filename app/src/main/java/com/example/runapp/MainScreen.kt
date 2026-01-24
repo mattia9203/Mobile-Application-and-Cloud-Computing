@@ -35,6 +35,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
 import com.google.firebase.auth.FirebaseAuth
+import androidx.compose.ui.res.painterResource
+import coil.compose.AsyncImage
 
 @Composable
 fun MainScreen(onSignOut: () -> Unit) {
@@ -328,21 +330,15 @@ fun RecentActivityItem(run: RunEntity, onClick: () -> Unit) {
             modifier = Modifier.size(70.dp).clip(RoundedCornerShape(16.dp)).background(NearWhite),
             contentAlignment = Alignment.Center
         ) {
-            if (run.imagePath != null) {
-                val bitmap: Bitmap? = remember(run.imagePath) { BitmapFactory.decodeFile(run.imagePath) }
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = null,
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize()
-                    )
-                } else {
-                    Icon(Icons.Default.Map, null, tint = MediumGray)
-                }
-            } else {
-                Icon(Icons.Default.Map, null, tint = MediumGray)
-            }
+            // FIXED: Handles both Local Files (Old) and Cloud URLs (New)
+            AsyncImage(
+                model = run.imagePath, // Coil handles File path OR Url automatically
+                contentDescription = "Map",
+                contentScale = ContentScale.Crop,
+                modifier = Modifier.fillMaxSize(),
+                error = painterResource(id = android.R.drawable.ic_menu_mapmode) // Optional fallback
+            )
+            // Note: If you don't have a fallback icon, removing 'error' is fine too
         }
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {

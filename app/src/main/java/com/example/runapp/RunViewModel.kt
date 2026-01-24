@@ -2,13 +2,15 @@ package com.example.runapp
 
 import android.annotation.SuppressLint
 import android.app.Application
-import android.content.Context
 import android.location.Location
+import android.net.Uri
 import android.os.Looper
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.android.gms.location.*
 import com.google.android.gms.maps.model.LatLng
+import com.google.firebase.auth.FirebaseAuth
+import com.google.firebase.storage.FirebaseStorage
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -17,6 +19,7 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.tasks.await
 import java.io.File
 
 enum class RunState {
@@ -24,10 +27,11 @@ enum class RunState {
 }
 
 class RunViewModel(application: Application) : AndroidViewModel(application) {
-    private val runDao = RunDatabase.getDatabase(application).runDao()
+    // --- CLOUD SETUP ---
+    private val auth = FirebaseAuth.getInstance()
     private val fusedLocationClient = LocationServices.getFusedLocationProviderClient(application)
 
-    // --- LIVE RUN STATE ---
+    // --- LIVE RUN STATE (Restored exactly as before) ---
     private val _runState = MutableStateFlow(RunState.READY)
     val runState = _runState.asStateFlow()
 
@@ -43,7 +47,7 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     private val _currentSpeed = MutableStateFlow(0f)
     val currentSpeed = _currentSpeed.asStateFlow()
 
-    // Live Map Data
+    // Map Data (Restored to LatLng for your UI)
     private val _pathPoints = MutableStateFlow<List<LatLng>>(emptyList())
     val pathPoints = _pathPoints.asStateFlow()
 
@@ -57,7 +61,18 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     private var lastLocation: Location? = null
     private var totalDistanceMetres = 0f
 
-    // --- LOCATION CALLBACK ---
+    // --- HISTORY DATA (From Cloud) ---
+    private val _allRuns = MutableStateFlow<List<RunEntity>>(emptyList())
+    val allRuns = _allRuns.asStateFlow()
+
+    private val _totalDistance = MutableStateFlow(0f)
+    val totalDistance = _totalDistance.asStateFlow()
+
+    init {
+        loadRunsFromCloud()
+    }
+
+    // --- LOCATION CALLBACK (Restored Logic) ---
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             for (location in result.locations) {
@@ -69,7 +84,7 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
                 if (_runState.value == RunState.RUNNING) {
                     if (lastLocation != null) {
                         val distanceGap = lastLocation!!.distanceTo(location)
-                        if (distanceGap > 1.0) {
+                        if (distanceGap > 1.0) { // Filter tiny movements
                             totalDistanceMetres += distanceGap
 
                             // Calculate Speed
@@ -78,30 +93,26 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
                             if (timeGapSeconds > 0) {
                                 speed = ((distanceGap / timeGapSeconds) * 3.6).toFloat()
                             }
-                            // Filter GPS spikes
-                            if (speed > 40f) speed = 0f
+                            if (speed > 40f) speed = 0f // Filter spikes
 
                             // Update StateFlows
                             _currentDistance.value = totalDistanceMetres / 1000f
                             _currentCalories.value = (_currentDistance.value * 70).toInt()
                             _currentSpeed.value = speed
-
-                            // Add to path (the red line)
                             _pathPoints.value = _pathPoints.value + newLatLng
                         }
                     }
                     lastLocation = location
                 } else if (_runState.value == RunState.READY) {
-                    // Keep lastLocation fresh so we don't jump when we eventually press Start
                     lastLocation = location
                 }
             }
         }
     }
 
-    // --- CONTROLS ---
+    // --- ACTIONS ---
 
-    // NEW: Call this when the screen opens to wake up the map
+    // This wakes up the map when you open the screen
     @SuppressLint("MissingPermission")
     fun startLocationUpdates() {
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000)
@@ -112,14 +123,9 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
 
     fun startRun() {
         if (_runState.value == RunState.RUNNING) return
-
         _runState.value = RunState.RUNNING
         startTime = System.currentTimeMillis()
-
-        // Start Timer
         startTimer()
-
-        // Note: Location updates are already running via startLocationUpdates()
     }
 
     fun pauseRun() {
@@ -137,21 +143,18 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     fun stopRun() {
         _runState.value = RunState.READY
         timerJob?.cancel()
-        // We do NOT stop location updates here, so the map stays alive if we stay on the screen
-
         // Reset Data
         _currentDuration.value = 0L
         _currentDistance.value = 0f
         _currentCalories.value = 0
         _currentSpeed.value = 0f
         _pathPoints.value = emptyList()
-        _currentLocation.value = null // Optional: clear map marker or keep it
         accumulatedTime = 0L
         totalDistanceMetres = 0f
         lastLocation = null
+        // Note: We don't stop location updates so the map stays alive
     }
 
-    // Call this when completely exiting the run screen (back to home)
     fun cleanup() {
         fusedLocationClient.removeLocationUpdates(locationCallback)
     }
@@ -166,19 +169,53 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- HISTORY DATA ---
-    val allRuns: StateFlow<List<RunEntity>> = runDao.getAllRuns()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), emptyList())
-
-    val totalDistance: StateFlow<Float?> = runDao.getTotalDistance()
-        .stateIn(viewModelScope, SharingStarted.WhileSubscribed(5000), 0f)
-
+    // --- CLOUD SAVING (The Magic Part) ---
     fun saveRun(run: RunEntity) = viewModelScope.launch {
-        runDao.insertRun(run)
+        val user = auth.currentUser ?: return@launch
+        var finalImageUrl = ""
+
+        // 1. If we have a local file (Snapshot), Upload it!
+        if (run.imagePath != null && !run.imagePath.startsWith("http")) {
+            try {
+                val file = Uri.fromFile(File(run.imagePath))
+                val ref = FirebaseStorage.getInstance().reference
+                    .child("run_maps/${user.uid}/${System.currentTimeMillis()}.jpg")
+
+                ref.putFile(file).await()
+                finalImageUrl = ref.downloadUrl.await().toString()
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+        }
+
+        // 2. Send Data + Cloud URL to Python
+        val success = RunApi.saveRun(user.uid, run, finalImageUrl)
+        if (success) {
+            loadRunsFromCloud()
+        }
+    }
+
+    fun loadRunsFromCloud() = viewModelScope.launch {
+        val user = auth.currentUser ?: return@launch
+        val runs = RunApi.getRuns(user.uid)
+        _allRuns.value = runs
+        _totalDistance.value = runs.map { it.distanceKm }.sum()
     }
 
     fun deleteRun(run: RunEntity) = viewModelScope.launch {
-        runDao.deleteRun(run)
-        run.imagePath?.let { File(it).delete() }
+        // 1. Call the Cloud API to delete it from SQL
+        val success = RunApi.deleteRun(run.id)
+
+        if (success) {
+            // 2. If server says "OK", remove it from the App screen immediately
+            val updatedList = _allRuns.value.toMutableList()
+            updatedList.remove(run)
+            _allRuns.value = updatedList
+
+            // Recalculate Total Distance
+            _totalDistance.value = updatedList.map { it.distanceKm }.sum()
+        } else {
+            println("DEBUG: Failed to delete run from server.")
+        }
     }
 }
