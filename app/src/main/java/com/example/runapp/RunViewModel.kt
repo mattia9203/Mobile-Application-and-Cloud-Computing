@@ -21,6 +21,7 @@ import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.io.File
+import kotlinx.coroutines.Dispatchers
 
 enum class RunState {
     READY, RUNNING, PAUSED
@@ -80,6 +81,11 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
                 val newLatLng = LatLng(location.latitude, location.longitude)
                 _currentLocation.value = newLatLng
 
+                val distFromLastWeather = lastWeatherLocation?.distanceTo(location) ?: Float.MAX_VALUE
+                if (distFromLastWeather > 500) {
+                    fetchWeather(location.latitude, location.longitude)
+                    lastWeatherLocation = location // Remember this spot
+                }
                 // 2. ONLY Record Stats if RUNNING
                 if (_runState.value == RunState.RUNNING) {
                     if (lastLocation != null) {
@@ -103,8 +109,12 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
                         }
                     }
                     lastLocation = location
+
                 } else if (_runState.value == RunState.READY) {
                     lastLocation = location
+                    if (!weatherFetched) {
+                        fetchWeather(location.latitude, location.longitude)
+                    }
                 }
             }
         }
@@ -216,6 +226,37 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
             _totalDistance.value = updatedList.map { it.distanceKm }.sum()
         } else {
             println("DEBUG: Failed to delete run from server.")
+        }
+    }
+    // WEATHER STATE (Temperature String + Weather Code)
+    private val _weatherState = MutableStateFlow<Triple<String, Int, Int>?>(null)
+    val weatherState = _weatherState.asStateFlow()
+    private var lastWeatherLocation: Location? = null
+    private var weatherFetched = false
+
+    // FUNCTION TO FETCH WEATHER
+    fun fetchWeather(lat: Double, lon: Double) = viewModelScope.launch(Dispatchers.IO) {
+        try {
+            // URL for Open-Meteo (Free, No Key)
+            val urlString = "https://api.open-meteo.com/v1/forecast?latitude=$lat&longitude=$lon&current_weather=true"
+            val url = java.net.URL(urlString)
+            val conn = url.openConnection() as java.net.HttpURLConnection
+            conn.requestMethod = "GET"
+
+            if (conn.responseCode == 200) {
+                val response = conn.inputStream.bufferedReader().use { it.readText() }
+                val json = org.json.JSONObject(response)
+
+                val currentWeather = json.getJSONObject("current_weather")
+                val temp = currentWeather.getDouble("temperature")
+                val code = currentWeather.getInt("weathercode")
+                val isDay = currentWeather.getInt("is_day")
+
+                // Save to State
+                _weatherState.value = Triple("$temp°C", code, isDay)
+            }
+        } catch (e: Exception) {
+            e.printStackTrace()
         }
     }
 }

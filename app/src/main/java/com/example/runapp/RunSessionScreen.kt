@@ -39,6 +39,13 @@ import java.io.File
 import java.io.FileOutputStream
 import java.util.concurrent.TimeUnit
 import com.example.runapp.ui.theme.*
+import androidx.compose.material.icons.rounded.WbSunny
+import androidx.compose.material.icons.rounded.Cloud
+import androidx.compose.material.icons.rounded.Grain
+import androidx.compose.material.icons.rounded.Thunderstorm
+import androidx.compose.material.icons.rounded.AcUnit
+import androidx.compose.material.icons.rounded.Star
+
 
 @Composable
 fun RunSessionScreen(
@@ -72,6 +79,7 @@ fun RunSessionScreen(
     var googleMapRef by remember { mutableStateOf<GoogleMap?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var isSnapshotMode by remember { mutableStateOf(false) }
+    val weatherData by viewModel.weatherState.collectAsState()
 
     // Start Location
     LaunchedEffect(Unit) { viewModel.startLocationUpdates() }
@@ -113,11 +121,8 @@ fun RunSessionScreen(
             Icon(Icons.Default.KeyboardArrowLeft, "Back", tint = Color.Black)
         }
 
-        // SENSOR DEBUG TEXT (You can remove this later)
-        Column(modifier = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 20.dp)) {
-            DebugChip("Lux: ${luxLevel.toInt()}")
-            Spacer(Modifier.height(4.dp))
-            DebugChip("Shake Detect: ON")
+        Box(modifier = Modifier.align(Alignment.TopEnd)) {
+            WeatherWidget(weatherData = weatherData)
         }
 
         // BOTTOM PANEL
@@ -406,6 +411,107 @@ fun MapWithRunnerIcon(
     }
 }
 
+// --- WEATHER HELPERS ---
+
+@Composable
+fun getWeatherIcon(code: Int, isDay: Int): ImageVector {
+    // 1. NIGHT MODE CHECK (If it's night and the sky is clear, show Moon)
+    if (isDay == 0 && (code == 0 || code == 1 || code == 2)) {
+        return Icons.Rounded.Star // 🌙 Moon Icon
+    }
+
+    // 2. WEATHER CODES
+    return when (code) {
+        0, 1 -> Icons.Rounded.WbSunny        // ☀️ Sunny
+        2, 3 -> Icons.Rounded.Cloud          // ☁️ Cloudy
+        45, 48 -> Icons.Rounded.Cloud        // 🌫️ Fog (Cloud is better than nothing)
+
+        // RAIN: Used to be "Grain" (dots), now "Thunderstorm" (Cloud + Rain/Bolt)
+        // Note: If you have extended library, use 'Icons.Rounded.WeatherRainy'
+        51, 53, 55 -> Icons.Rounded.Thunderstorm // 🌧️ Cloud + Rain
+        61, 63, 65 -> Icons.Rounded.Thunderstorm
+        80, 81, 82 -> Icons.Rounded.Thunderstorm
+
+        71, 73, 75 -> Icons.Rounded.AcUnit   // ❄️ Snow
+        95, 96, 99 -> Icons.Rounded.Thunderstorm // ⛈️ Thunderstorm
+        else -> Icons.Rounded.WbSunny
+    }
+}
+
+@Composable
+fun getWeatherColor(code: Int, isDay: Int): Color {
+    return when (code) {
+        0, 1 -> Color(0xFFFFB300)        // Clear Sky: Golden Yellow ☀️
+        2, 3 -> Color.Gray               // Cloudy: Gray ☁️
+        45, 48 -> Color.LightGray        // Fog: Light Gray 🌫️
+        51, 53, 55, 61, 63, 65, 80, 81, 82 -> Color(0xFF42A5F5) // Rain: Blue 🌧️
+        71, 73, 75 -> Color(0xFF26C6DA)  // Snow: Cyan ❄️
+        95, 96, 99 -> Color(0xFF5E35B1)  // Thunderstorm: Purple ⛈️
+        else -> Color(0xFFFFB300)        // Default
+    }
+}
+
+@Composable
+fun getThermometerColor(tempString: String): Color {
+    // Extract number from "22.5°C" -> 22.5
+    val value = tempString.replace("°C", "").trim().toDoubleOrNull() ?: 20.0
+    return when {
+        value < 10.0 -> Color(0xFF2196F3) // Blue (Cold)
+        value < 25.0 -> Color(0xFFFF9800) // Orange (Nice)
+        else -> Color(0xFFF44336)         // Red (Hot)
+    }
+}
+
+@Composable
+fun WeatherWidget(weatherData: Triple<String, Int, Int>?) {
+    if (weatherData == null) return // Don't show anything if loading
+
+    val (temp, code, isDay) = weatherData
+
+    Card(
+        shape = RoundedCornerShape(16.dp),
+        colors = CardDefaults.cardColors(containerColor = Color.White.copy(alpha = 0.9f)),
+        elevation = CardDefaults.cardElevation(4.dp),
+        modifier = Modifier
+            .padding(top = 50.dp, end = 20.dp)
+            .wrapContentSize()
+    ) {
+        Row(
+            modifier = Modifier.padding(horizontal = 12.dp, vertical = 8.dp),
+            verticalAlignment = Alignment.CenterVertically
+        ) {
+            // Icon (Pass isDay to choose Sun vs Moon)
+            Icon(
+                imageVector = getWeatherIcon(code, isDay),
+                contentDescription = null,
+                tint = getWeatherColor(code, isDay),
+                modifier = Modifier.size(28.dp)
+            )
+
+            Spacer(modifier = Modifier.width(12.dp))
+            Box(modifier = Modifier.width(1.dp).height(24.dp).background(Color.LightGray))
+            Spacer(modifier = Modifier.width(12.dp))
+
+            // Thermometer
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Icon(
+                    imageVector = Icons.Default.DeviceThermostat,
+                    contentDescription = null,
+                    tint = getThermometerColor(temp),
+                    modifier = Modifier.size(20.dp)
+                )
+                Spacer(modifier = Modifier.width(4.dp))
+                Text(
+                    text = temp,
+                    fontWeight = FontWeight.Bold,
+                    fontSize = 16.sp,
+                    color = Color.Black
+                )
+            }
+        }
+    }
+}
+
 suspend fun captureMapSnapshot(context: Context, googleMap: GoogleMap): String? {
     return kotlin.coroutines.suspendCoroutine { continuation ->
         googleMap.snapshot { bitmap ->
@@ -429,3 +535,4 @@ fun formatTime(millis: Long): String {
     val seconds = TimeUnit.MILLISECONDS.toSeconds(millis) % 60
     return String.format("%02d:%02d:%02d", hours, minutes, seconds)
 }
+
