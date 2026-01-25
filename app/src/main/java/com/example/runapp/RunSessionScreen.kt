@@ -31,6 +31,7 @@ import com.google.android.gms.maps.GoogleMap
 import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
+import com.google.android.gms.maps.model.MapStyleOptions
 import com.google.maps.android.compose.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -48,40 +49,55 @@ fun RunSessionScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // --- OBSERVE VIEWMODEL ---
+    // --- SENSORS SETUP ---
+    // 1. Light Sensor (Night Mode)
+    val lightSensor = remember { LightSensor(context) }
+    val luxLevel by lightSensor.lightLevel.collectAsState(initial = 1000f)
+    val isNightMode = luxLevel < 50f
+
+    // 2. Shake Detector (Stop Confirmation)
+    val shakeDetector = remember { ShakeDetector(context) }
+    var showShakeDialog by remember { mutableStateOf(false) }
+
+    // --- VIEWMODEL STATE ---
     val runState by viewModel.runState.collectAsState()
     val durationMillis by viewModel.currentDuration.collectAsState()
     val distanceKm by viewModel.currentDistance.collectAsState()
     val currentSpeedKmh by viewModel.currentSpeed.collectAsState()
     val calories by viewModel.currentCalories.collectAsState()
 
-    // Map Data - FIXED: Direct collection (No .map error)
     val currentLatLng by viewModel.currentLocation.collectAsState()
     val pathPoints by viewModel.pathPoints.collectAsState()
 
-    // Local UI State
     var googleMapRef by remember { mutableStateOf<GoogleMap?>(null) }
     var isSaving by remember { mutableStateOf(false) }
     var isSnapshotMode by remember { mutableStateOf(false) }
 
-    // Start Location Updates Immediately (Wakes up the map)
-    LaunchedEffect(Unit) {
-        viewModel.startLocationUpdates()
+    // Start Location
+    LaunchedEffect(Unit) { viewModel.startLocationUpdates() }
+
+    // Listen for Shake Events (Only when Running)
+    LaunchedEffect(runState) {
+        if (runState == RunState.RUNNING) {
+            shakeDetector.shakeEvent.collect {
+                showShakeDialog = true
+            }
+        }
     }
 
-    // --- MAIN UI ---
     Box(modifier = Modifier.fillMaxSize()) {
 
-        // 1. MAP
+        // MAP
         MapWithRunnerIcon(
             currentLocation = currentLatLng,
             currentSpeedKmh = currentSpeedKmh,
             pathPoints = pathPoints,
             isSnapshotMode = isSnapshotMode,
+            isNightMode = isNightMode,
             onMapLoaded = { googleMapRef = it }
         )
 
-        // 2. BACK BUTTON
+        // BACK BUTTON
         Box(
             modifier = Modifier
                 .padding(start = 20.dp, top = 40.dp)
@@ -91,15 +107,20 @@ fun RunSessionScreen(
                 .shadow(elevation = 4.dp, shape = CircleShape)
                 .clip(CircleShape)
                 .background(Color.White)
-                .clickable {
-                    onBackClick()
-                },
+                .clickable { onBackClick() },
             contentAlignment = Alignment.Center
         ) {
             Icon(Icons.Default.KeyboardArrowLeft, "Back", tint = Color.Black)
         }
 
-        // 3. BOTTOM PANEL
+        // SENSOR DEBUG TEXT (You can remove this later)
+        Column(modifier = Modifier.align(Alignment.TopEnd).padding(top = 50.dp, end = 20.dp)) {
+            DebugChip("Lux: ${luxLevel.toInt()}")
+            Spacer(Modifier.height(4.dp))
+            DebugChip("Shake Detect: ON")
+        }
+
+        // BOTTOM PANEL
         Box(
             modifier = Modifier
                 .align(Alignment.BottomCenter)
@@ -108,7 +129,6 @@ fun RunSessionScreen(
                 .zIndex(2f)
         ) {
             if (runState == RunState.READY) {
-                // START BUTTON (Restored)
                 Button(
                     onClick = { viewModel.startRun() },
                     colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
@@ -118,7 +138,6 @@ fun RunSessionScreen(
                     Text("START RUNNING", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
                 }
             } else {
-                // STATS PANEL
                 RunInfoPanel(
                     durationMillis = durationMillis,
                     distanceKm = distanceKm,
@@ -126,39 +145,113 @@ fun RunSessionScreen(
                     speedKmh = currentSpeedKmh,
                     runState = runState,
                     isSaving = isSaving,
-                    onTogglePause = {
-                        if (runState == RunState.RUNNING) viewModel.pauseRun() else viewModel.resumeRun()
-                    },
+                    onTogglePause = { if (runState == RunState.RUNNING) viewModel.pauseRun() else viewModel.resumeRun() },
                     onStop = {
-                        // Handles Snapshot + Saving
                         finishRun(
-                            scope = scope,
-                            isSaving = isSaving,
-                            mapRef = googleMapRef,
-                            context = context,
-                            dist = distanceKm,
-                            speed = currentSpeedKmh,
-                            time = durationMillis,
-                            cals = calories,
-                            pathPoints = pathPoints,
-                            onStartSave = {
-                                isSaving = true
-                                isSnapshotMode = true
-                            },
-                            onResult = { entity ->
-                                viewModel.stopRun()
-                                // Pass the entity (with local image path) back to MainScreen to save
-                                onStopClick(entity)
-                            }
+                            scope = scope, isSaving = isSaving, mapRef = googleMapRef, context = context,
+                            dist = distanceKm, speed = currentSpeedKmh, time = durationMillis, cals = calories, pathPoints = pathPoints,
+                            onStartSave = { isSaving = true; isSnapshotMode = true },
+                            onResult = { entity -> viewModel.stopRun(); onStopClick(entity) }
                         )
                     }
                 )
             }
         }
+
+        // --- SHAKE CONFIRMATION DIALOG ---
+        if (showShakeDialog) {
+            AlertDialog(
+                onDismissRequest = { showShakeDialog = false },
+                icon = { Icon(Icons.Default.Vibration, null, modifier = Modifier.size(40.dp), tint = MaterialTheme.colorScheme.primary) },
+                title = { Text("Shake Detected!") },
+                text = { Text("Do you want to stop your run?") },
+                confirmButton = {
+                    Button(
+                        onClick = {
+                            showShakeDialog = false
+                            // Trigger the exact same stop logic as the button
+                            finishRun(
+                                scope = scope, isSaving = isSaving, mapRef = googleMapRef, context = context,
+                                dist = distanceKm, speed = currentSpeedKmh, time = durationMillis, cals = calories, pathPoints = pathPoints,
+                                onStartSave = { isSaving = true; isSnapshotMode = true },
+                                onResult = { entity -> viewModel.stopRun(); onStopClick(entity) }
+                            )
+                        },
+                        colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
+                    ) {
+                        Text("Stop Run", color = Color.White)
+                    }
+                },
+                dismissButton = {
+                    TextButton(onClick = { showShakeDialog = false }) {
+                        Text("Keep Running")
+                    }
+                }
+            )
+        }
     }
 }
 
-// --- SNAPSHOT & FINISH LOGIC (Restored) ---
+@Composable
+fun DebugChip(text: String) {
+    Box(modifier = Modifier.background(Color.Black.copy(alpha=0.5f), RoundedCornerShape(8.dp)).padding(8.dp)) {
+        Text(text, color = Color.White, fontSize = 12.sp)
+    }
+}
+
+@Composable
+fun MapWithRunnerIcon(
+    currentLocation: LatLng?,
+    currentSpeedKmh: Float,
+    pathPoints: List<LatLng>,
+    isSnapshotMode: Boolean,
+    isNightMode: Boolean, // New Parameter
+    onMapLoaded: (GoogleMap) -> Unit
+) {
+    val defaultPos = LatLng(0.0, 0.0)
+    val cameraPositionState = rememberCameraPositionState { position = CameraPosition.fromLatLngZoom(defaultPos, 17f) }
+
+    val infiniteTransition = rememberInfiniteTransition(label = "runnerAnim")
+    val bounceOffset by infiniteTransition.animateFloat(initialValue = 0f, targetValue = -10f, animationSpec = infiniteRepeatable(tween(300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "bounce")
+    val actualBounce = if (!isSnapshotMode && currentSpeedKmh > 1.0f) bounceOffset else 0f
+
+    LaunchedEffect(currentLocation, isSnapshotMode) {
+        if (currentLocation != null && !isSnapshotMode) {
+            cameraPositionState.animate(update = CameraUpdateFactory.newLatLngZoom(currentLocation, 17f), durationMs = 1000)
+        }
+    }
+
+    // APPLY STYLE HERE
+    val mapProperties = remember(isNightMode) {
+        MapProperties(
+            isMyLocationEnabled = false,
+            mapStyleOptions = if (isNightMode) DarkMapStyle else null
+        )
+    }
+
+    GoogleMap(
+        modifier = Modifier.fillMaxSize(),
+        cameraPositionState = cameraPositionState,
+        properties = mapProperties, // UPDATED
+        uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = false, compassEnabled = false)
+    ) {
+        MapEffect(Unit) { map -> onMapLoaded(map) }
+
+        // Change Polyline color if night mode (White looks better on dark map)
+        val polyColor = if (isNightMode) Color.Cyan else MaterialTheme.colorScheme.primary
+
+        if (pathPoints.isNotEmpty()) Polyline(points = pathPoints, color = polyColor, width = 15f)
+        if (currentLocation != null) {
+            MarkerComposable(state = MarkerState(position = currentLocation)) {
+                val iconVector = if (isSnapshotMode) Icons.Default.Place else Icons.Default.DirectionsRun
+                val tintColor = if (isSnapshotMode) Color.Red else polyColor
+                val size = if (isSnapshotMode) 40.dp else 36.dp
+                Icon(imageVector = iconVector, contentDescription = "User", tint = tintColor, modifier = Modifier.size(size).offset(y = actualBounce.dp))
+            }
+        }
+    }
+}
+
 fun finishRun(
     scope: kotlinx.coroutines.CoroutineScope,
     isSaving: Boolean,
@@ -176,6 +269,7 @@ fun finishRun(
     onStartSave()
 
     scope.launch {
+        delay(500L)
         // 1. Move camera to fit path
         if (mapRef != null && pathPoints.isNotEmpty()) {
             try {
@@ -194,7 +288,7 @@ fun finishRun(
         }
 
         // 2. Wait for map to render
-        delay(1500L)
+        delay(200L)
 
         // 3. Take Screenshot
         var savedPath: String? = null
