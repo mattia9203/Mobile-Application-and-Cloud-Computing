@@ -1,19 +1,16 @@
 package com.example.runapp
 
 import android.Manifest
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.os.Build
 import androidx.activity.compose.rememberLauncherForActivityResult
 import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.*
 import androidx.compose.material3.*
@@ -23,71 +20,70 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.painterResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.viewmodel.compose.viewModel
+import coil.compose.AsyncImage
 import com.example.runapp.ui.theme.*
+import com.google.firebase.auth.FirebaseAuth
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
-import com.google.firebase.auth.FirebaseAuth
-import androidx.compose.ui.res.painterResource
-import coil.compose.AsyncImage
 
 @Composable
-fun MainScreen(onSignOut: () -> Unit) {
+fun MainScreen(
+    onSignOut: () -> Unit,
+    onNavigateToStats: () -> Unit = {}
+) {
     val viewModel: RunViewModel = viewModel()
     val auth = FirebaseAuth.getInstance()
     val user = auth.currentUser
 
-    // 2. Get the name (If name is empty, use "Runner" as backup)
-    val displayName = user?.displayName ?: "Runner"
     RunAppTheme {
         // STATES
-        // Observe runState
         val runState by viewModel.runState.collectAsState()
-        // Calculate isRunActive based on the state (Running or Paused = Active)
         val isRunActive = runState != RunState.READY
 
         val currentDuration by viewModel.currentDuration.collectAsState()
         val currentDistance by viewModel.currentDistance.collectAsState()
         val currentCalories by viewModel.currentCalories.collectAsState()
 
-        // LOCAL STATE TO CONTROL FULL SCREEN MAP VIEW
         var showFullRunScreen by remember { mutableStateOf(false) }
-
         var showAllActivities by remember { mutableStateOf(false) }
         var selectedRun by remember { mutableStateOf<RunEntity?>(null) }
 
         val recentRuns by viewModel.allRuns.collectAsState()
         val totalDistance by viewModel.totalDistance.collectAsState()
+        val weeklyCalories by viewModel.weeklyCalories.collectAsState()
+        var showStatsScreen by remember {mutableStateOf(false)}
 
         // PERMISSIONS
         val permissionLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestMultiplePermissions()
         ) { }
         LaunchedEffect(Unit) {
-            val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION, Manifest.permission.CAMERA)
+            val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) perms.add(Manifest.permission.ACTIVITY_RECOGNITION)
             permissionLauncher.launch(perms.toTypedArray())
         }
 
         // --- MAIN UI STRUCTURE ---
         if (showFullRunScreen) {
-            // Screen handles map logic. We don't force start here.
             RunSessionScreen(
                 viewModel = viewModel,
                 onStopClick = { runData ->
                     viewModel.saveRun(runData)
                     showFullRunScreen = false
                 },
-                onBackClick = {
-                    showFullRunScreen = false
-                }
+                onBackClick = { showFullRunScreen = false }
+            )
+        } else if (showStatsScreen) {
+            StatsScreen(
+                viewModel = viewModel,
+                onBackClick = { showStatsScreen = false }
             )
         } else if (showAllActivities) {
             AllActivitiesScreen(
@@ -97,11 +93,12 @@ fun MainScreen(onSignOut: () -> Unit) {
         } else {
             // DASHBOARD
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
-                // 1. THE BLUE HEADER BACKGROUND SHAPE
+
+                // 1. BLUE HEADER BACKGROUND (Reduced Size)
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(280.dp)
+                        .height(235.dp) // <--- REDUCED from 280.dp
                         .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
                         .background(
                             brush = Brush.verticalGradient(
@@ -110,7 +107,7 @@ fun MainScreen(onSignOut: () -> Unit) {
                         )
                 )
 
-                // 2. THE SCAFFOLD
+                // 2. SCAFFOLD
                 Scaffold(
                     containerColor = Color.Transparent,
                     topBar = { AppHeader(whiteText = true) },
@@ -126,13 +123,9 @@ fun MainScreen(onSignOut: () -> Unit) {
                         }
                     },
                     floatingActionButton = {
-                        // Only show FAB if run is NOT active (READY state)
                         if (!isRunActive) {
                             FloatingActionButton(
-                                onClick = {
-                                    // Just open the screen. Do NOT auto-start.
-                                    showFullRunScreen = true
-                                },
+                                onClick = { showFullRunScreen = true },
                                 containerColor = MaterialTheme.colorScheme.primary,
                                 contentColor = White,
                                 shape = CircleShape,
@@ -144,51 +137,40 @@ fun MainScreen(onSignOut: () -> Unit) {
                     },
                     floatingActionButtonPosition = FabPosition.Center
                 ) { paddingValues ->
+
+                    // --- SCROLLABLE COLUMN ---
                     Column(
                         modifier = Modifier
                             .padding(paddingValues)
                             .padding(horizontal = 20.dp)
                             .fillMaxSize()
+                            .verticalScroll(rememberScrollState()) // <--- ADDED SCROLL
                     ) {
-                        Spacer(modifier = Modifier.height(10.dp))
+                        // Spacers reduced to pull content up
+                        Spacer(modifier = Modifier.height(5.dp)) // Reduced from 10
+
                         Text("READY TO RUN?", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = White.copy(alpha = 0.9f))
-                        Spacer(modifier = Modifier.height(30.dp))
 
+                        Spacer(modifier = Modifier.height(15.dp)) // Reduced from 30
+
+                        // LOGOUT BUTTON
                         IconButton(onClick = {
-                            auth.signOut() // 1. Tell Firebase to Log Out
-                            onSignOut()    // 2. Tell the App to switch screens
+                            auth.signOut()
+                            onSignOut()
                         }) {
-                            Icon(
-                                imageVector = Icons.Default.ExitToApp,
-                                contentDescription = "Logout",
-                                tint = Color.Red
-                            )
+                            Icon(Icons.Default.ExitToApp, "Logout", tint = Color.Red)
                         }
 
-                        Card(
-                            modifier = Modifier.fillMaxWidth().padding(bottom = 25.dp),
-                            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
-                            shape = RoundedCornerShape(24.dp),
-                            elevation = CardDefaults.cardElevation(8.dp)
-                        ) {
-                            Column(modifier = Modifier.padding(24.dp)) {
-                                Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                                    Text("Weekly Goal", color = MediumGray)
-                                    Text("10 km", color = MaterialTheme.colorScheme.primary, fontWeight = FontWeight.Bold)
-                                }
-                                Spacer(modifier = Modifier.height(16.dp))
-                                val progress = ((totalDistance ?: 0f) / 10f).coerceIn(0f, 1f)
-                                LinearProgressIndicator(
-                                    progress = progress,
-                                    modifier = Modifier.fillMaxWidth().height(12.dp).clip(RoundedCornerShape(6.dp)),
-                                    color = MaterialTheme.colorScheme.primary,
-                                    trackColor = NearWhite
-                                )
-                                Text("%.1f km done".format(totalDistance ?: 0f), fontSize = 12.sp, color = MediumGray, modifier = Modifier.padding(top = 8.dp))
-                            }
-                        }
+                        // WEEKLY GOAL CARD
+                        WeeklyGoalCard(
+                            distanceKm = totalDistance,
+                            goalKm = 10f,
+                            calories = weeklyCalories,
+                            goalCalories = 2000,
+                            onClick = { showStatsScreen = true }
+                        )
 
-                        // CURRENT SESSION PANEL (Only if run is active)
+                        // CURRENT SESSION PANEL
                         if (isRunActive) {
                             CurrentSessionPanel(
                                 duration = currentDuration,
@@ -199,6 +181,7 @@ fun MainScreen(onSignOut: () -> Unit) {
                             Spacer(modifier = Modifier.height(20.dp))
                         }
 
+                        // RECENT ACTIVITY HEADER
                         Row(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
                             Text("Recent Activity", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
                             TextButton(onClick = { showAllActivities = true }) {
@@ -206,7 +189,11 @@ fun MainScreen(onSignOut: () -> Unit) {
                             }
                         }
 
+                        // RECENT ACTIVITY LIST
                         RecentActivityPanel(runs = recentRuns, onItemClick = { run -> selectedRun = run })
+
+                        // Extra space at bottom so FAB doesn't cover last item
+                        Spacer(modifier = Modifier.height(80.dp))
                     }
                 }
             }
@@ -228,6 +215,86 @@ fun MainScreen(onSignOut: () -> Unit) {
 // --- HELPER COMPONENTS ---
 
 @Composable
+fun WeeklyGoalCard(
+    distanceKm: Float,
+    goalKm: Float,
+    calories: Int,
+    goalCalories: Int,
+    onClick: () -> Unit
+) {
+    val distProgress = (distanceKm / goalKm).coerceIn(0f, 1f)
+    val calProgress = (calories.toFloat() / goalCalories.toFloat()).coerceIn(0f, 1f)
+
+    Card(
+        modifier = Modifier
+            .fillMaxWidth()
+            .padding(bottom = 20.dp) // Reduced padding
+            .clickable { onClick() },
+        shape = RoundedCornerShape(24.dp),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+        elevation = CardDefaults.cardElevation(8.dp)
+    ) {
+        Column(modifier = Modifier.padding(20.dp)) { // Reduced internal padding
+
+            // Header with Arrow
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.SpaceBetween,
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Text(
+                    text = "Weekly Goals",
+                    fontSize = 20.sp,
+                    fontWeight = FontWeight.Bold,
+                    color = Color.Black
+                )
+                Icon(
+                    imageVector = Icons.Default.KeyboardArrowRight,
+                    contentDescription = "Details",
+                    tint = Color.Gray,
+                    modifier = Modifier.size(28.dp)
+                )
+            }
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 1. Distance Bar (Blue)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Distance", fontSize = 14.sp, color = Color.Gray)
+                Text("${String.format("%.1f", distanceKm)} / ${goalKm.toInt()} km", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.primary)
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            LinearProgressIndicator(
+                progress = distProgress,
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                color = MaterialTheme.colorScheme.primary,
+                trackColor = MaterialTheme.colorScheme.primary.copy(alpha = 0.2f)
+            )
+
+            Spacer(modifier = Modifier.height(12.dp))
+
+            // 2. Calories Bar (Red)
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Text("Calories", fontSize = 14.sp, color = Color.Gray)
+                Text("$calories / $goalCalories kcal", fontSize = 14.sp, fontWeight = FontWeight.Bold, color = Color(0xFFE53935))
+            }
+            Spacer(modifier = Modifier.height(6.dp))
+            LinearProgressIndicator(
+                progress = calProgress,
+                modifier = Modifier.fillMaxWidth().height(8.dp).clip(RoundedCornerShape(4.dp)),
+                color = Color(0xFFE53935), // Red
+                trackColor = Color(0xFFE53935).copy(alpha = 0.2f)
+            )
+        }
+    }
+}
+
+// ... (KEEP THE REST: CurrentSessionPanel, RecentActivityPanel, RecentActivityItem, SmallStat, AppHeader, formatDurationMain) ...
+// (Be sure to copy the rest of the helpers from your previous file if you overwrite the whole thing)
+
+// RE-ADDING THE MISSING HELPERS BELOW SO YOU CAN COPY-PASTE THE WHOLE FILE SAFELY:
+
+@Composable
 fun CurrentSessionPanel(
     duration: Long,
     distance: Float,
@@ -243,53 +310,26 @@ fun CurrentSessionPanel(
         elevation = CardDefaults.cardElevation(8.dp)
     ) {
         Row(
-            modifier = Modifier
-                .padding(20.dp)
-                .fillMaxWidth(),
+            modifier = Modifier.padding(20.dp).fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Box(
-                    modifier = Modifier
-                        .size(50.dp)
-                        .background(Color.White, CircleShape),
+                    modifier = Modifier.size(50.dp).background(Color.White, CircleShape),
                     contentAlignment = Alignment.Center
                 ) {
-                    Icon(
-                        imageVector = Icons.Default.DirectionsRun,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(30.dp)
-                    )
+                    Icon(Icons.Default.DirectionsRun, null, tint = MaterialTheme.colorScheme.primary, modifier = Modifier.size(30.dp))
                 }
                 Spacer(modifier = Modifier.width(16.dp))
                 Column {
-                    Text(
-                        text = "Current Session",
-                        color = Color.White.copy(alpha = 0.8f),
-                        fontSize = 14.sp
-                    )
-                    Text(
-                        text = formatDurationMain(duration),
-                        color = Color.White,
-                        fontSize = 20.sp,
-                        fontWeight = FontWeight.Bold
-                    )
+                    Text("Current Session", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
+                    Text(formatDurationMain(duration), color = Color.White, fontSize = 20.sp, fontWeight = FontWeight.Bold)
                 }
             }
             Column(horizontalAlignment = Alignment.End) {
-                Text(
-                    text = "%.2f km".format(distance),
-                    color = Color.White,
-                    fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
-                )
-                Text(
-                    text = "$calories kcal",
-                    color = Color.White.copy(alpha = 0.8f),
-                    fontSize = 14.sp
-                )
+                Text("%.2f km".format(distance), color = Color.White, fontSize = 18.sp, fontWeight = FontWeight.Bold)
+                Text("$calories kcal", color = Color.White.copy(alpha = 0.8f), fontSize = 14.sp)
             }
         }
     }
@@ -320,25 +360,20 @@ fun RecentActivityPanel(runs: List<RunEntity>, onItemClick: (RunEntity) -> Unit)
 @Composable
 fun RecentActivityItem(run: RunEntity, onClick: () -> Unit) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable { onClick() }
-            .padding(16.dp),
+        modifier = Modifier.fillMaxWidth().clickable { onClick() }.padding(16.dp),
         verticalAlignment = Alignment.CenterVertically
     ) {
         Box(
             modifier = Modifier.size(70.dp).clip(RoundedCornerShape(16.dp)).background(NearWhite),
             contentAlignment = Alignment.Center
         ) {
-            // FIXED: Handles both Local Files (Old) and Cloud URLs (New)
             AsyncImage(
-                model = run.imagePath, // Coil handles File path OR Url automatically
+                model = run.imagePath,
                 contentDescription = "Map",
                 contentScale = ContentScale.Crop,
                 modifier = Modifier.fillMaxSize(),
-                error = painterResource(id = android.R.drawable.ic_menu_mapmode) // Optional fallback
+                error = painterResource(id = android.R.drawable.ic_menu_mapmode)
             )
-            // Note: If you don't have a fallback icon, removing 'error' is fine too
         }
         Spacer(modifier = Modifier.width(16.dp))
         Column(modifier = Modifier.weight(1f)) {
@@ -378,8 +413,6 @@ fun formatDurationMain(millis: Long): String {
 fun AppHeader(whiteText: Boolean = false) {
     val auth = FirebaseAuth.getInstance()
     val user = auth.currentUser
-
-    // 2. Get the name (If name is empty, use "Runner" as backup)
     val displayName = user?.displayName ?: "Runner"
     Row(
         modifier = Modifier.fillMaxWidth().padding(20.dp).statusBarsPadding(),
@@ -388,7 +421,7 @@ fun AppHeader(whiteText: Boolean = false) {
     ) {
         Column {
             Text("Hello,", color = if (whiteText) White.copy(alpha = 0.8f) else MediumGray)
-            Text("$displayName", color = if (whiteText) White else MaterialTheme.colorScheme.onBackground, fontSize = 24.sp, fontWeight = FontWeight.Bold)
+            Text(displayName, color = if (whiteText) White else MaterialTheme.colorScheme.onBackground, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         }
         Box(
             modifier = Modifier.size(45.dp).background(White.copy(alpha = 0.2f), CircleShape),

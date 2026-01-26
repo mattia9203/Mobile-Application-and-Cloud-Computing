@@ -45,7 +45,8 @@ import androidx.compose.material.icons.rounded.Grain
 import androidx.compose.material.icons.rounded.Thunderstorm
 import androidx.compose.material.icons.rounded.AcUnit
 import androidx.compose.material.icons.rounded.Star
-
+import kotlin.coroutines.resume
+import kotlin.coroutines.suspendCoroutine
 
 @Composable
 fun RunSessionScreen(
@@ -271,41 +272,34 @@ fun finishRun(
     onResult: (RunEntity) -> Unit
 ) {
     if (isSaving) return
-    onStartSave()
+    onStartSave() // Shows loading indicator
 
     scope.launch {
-        delay(500L)
-        // 1. Move camera to fit path
-        if (mapRef != null && pathPoints.isNotEmpty()) {
-            try {
-                val boundsBuilder = LatLngBounds.Builder()
-                pathPoints.forEach { boundsBuilder.include(it) }
-                val bounds = boundsBuilder.build()
+        var savedPath: String? = null
 
-                if (pathPoints.size > 1) {
-                    mapRef.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 300))
-                } else {
-                    mapRef.moveCamera(CameraUpdateFactory.newLatLngZoom(pathPoints[0], 16f))
-                }
-            } catch (e: Exception) {
-                e.printStackTrace()
-            }
+        // We delegate the "Move & Snap" logic to the helper function
+        if (mapRef != null && pathPoints.isNotEmpty()) {
+            // This will suspend (wait) until the map is fully loaded and snapped
+            savedPath = captureMapSnapshot(context, mapRef, pathPoints)
         }
 
-        // 2. Wait for map to render
-        delay(200L)
-
-        // 3. Take Screenshot
-        var savedPath: String? = null
-        if (mapRef != null) savedPath = captureMapSnapshot(context, mapRef)
-
+        // Stats Calculation
         val hours = time / 1000f / 3600f
         val avgSpeed = if (hours > 0) dist / hours else 0f
 
-        onResult(RunEntity(distanceKm = dist, avgSpeedKmh = avgSpeed, durationMillis = time, caloriesBurned = cals, imagePath = savedPath))
+        // Create & Save Entity
+        val runEntity = RunEntity(
+            distanceKm = dist,
+            avgSpeedKmh = avgSpeed,
+            durationMillis = time,
+            caloriesBurned = cals,
+            imagePath = savedPath,
+            timestamp = System.currentTimeMillis()
+        )
+
+        onResult(runEntity)
     }
 }
-
 // --- HELPER COMPONENTS (Restored) ---
 
 @Composable
@@ -512,19 +506,51 @@ fun WeatherWidget(weatherData: Triple<String, Int, Int>?) {
     }
 }
 
-suspend fun captureMapSnapshot(context: Context, googleMap: GoogleMap): String? {
-    return kotlin.coroutines.suspendCoroutine { continuation ->
-        googleMap.snapshot { bitmap ->
-            if (bitmap != null) {
-                try {
-                    val file = File(context.filesDir, "run_map_${System.currentTimeMillis()}.jpg")
-                    val out = FileOutputStream(file)
-                    bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out)
-                    out.flush()
-                    out.close()
-                    continuation.resumeWith(Result.success(file.absolutePath))
-                } catch (e: Exception) { continuation.resumeWith(Result.success(null)) }
-            } else continuation.resumeWith(Result.success(null))
+suspend fun captureMapSnapshot(
+    context: Context,
+    googleMap: GoogleMap,
+    pathPoints: List<LatLng> // <--- NEW PARAMETER
+): String? {
+    if (pathPoints.isEmpty()) return null
+
+    return suspendCoroutine { continuation ->
+        try {
+            // 1. Calculate Bounds
+            val boundsBuilder = LatLngBounds.Builder()
+            pathPoints.forEach { boundsBuilder.include(it) }
+            val bounds = boundsBuilder.build()
+
+            // 2. Move Camera (with padding)
+            // 150 padding ensures the line doesn't touch the edge of the image
+            googleMap.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 400))
+
+            // 3. WAIT for the map to finish loading tiles!
+            googleMap.setOnMapLoadedCallback {
+                // 4. Now it is safe to take the picture
+                googleMap.snapshot { bitmap ->
+                    if (bitmap != null) {
+                        try {
+                            val file = File(context.filesDir, "run_map_${System.currentTimeMillis()}.jpg")
+                            val out = FileOutputStream(file)
+                            bitmap.compress(Bitmap.CompressFormat.JPEG, 80, out)
+                            out.flush()
+                            out.close()
+                            continuation.resume(file.absolutePath)
+                        } catch (e: Exception) {
+                            e.printStackTrace()
+                            continuation.resume(null)
+                        }
+                    } else {
+                        continuation.resume(null)
+                    }
+                }
+            }
+        } catch (e: Exception) {
+            // Fallback: If bounds fail (e.g., single point), just take a snapshot of current view
+            googleMap.snapshot { bitmap ->
+                // ... (simple save logic if needed, or just return null)
+                continuation.resume(null)
+            }
         }
     }
 }
