@@ -19,7 +19,20 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 import java.io.File
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.flow.combine
+import kotlinx.coroutines.flow.SharingStarted
+import kotlinx.coroutines.flow.stateIn
+import kotlinx.coroutines.flow.StateFlow
 import java.util.Calendar
+import androidx.compose.ui.graphics.vector.ImageVector
+import androidx.compose.material.icons.rounded.Speed
+import androidx.compose.material.icons.rounded.Map
+import androidx.compose.material.icons.rounded.Bedtime
+import androidx.compose.material.icons.rounded.EmojiEvents
+import androidx.compose.material.icons.Icons
+import androidx.compose.material.icons.rounded.DirectionsRun
+import androidx.compose.material.icons.rounded.LocalFireDepartment
+import kotlin.collections.emptyList
 
 enum class RunState {
     READY, RUNNING, PAUSED
@@ -27,6 +40,14 @@ enum class RunState {
 
 enum class StatsType {
     CALORIES, DURATION, DISTANCE
+}
+
+enum class SortOption {
+    DATE, DISTANCE, DURATION, CALORIES, SPEED
+}
+
+enum class SortDirection {
+    DESCENDING, ASCENDING
 }
 
 class RunViewModel(application: Application) : AndroidViewModel(application) {
@@ -37,6 +58,12 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     // --- LIVE RUN STATE ---
     private val _runState = MutableStateFlow(RunState.READY)
     val runState = _runState.asStateFlow()
+
+    private val _sortOption = MutableStateFlow(SortOption.DATE) // Default: Date
+    val sortOption = _sortOption.asStateFlow()
+
+    private val _sortDirection = MutableStateFlow(SortDirection.DESCENDING) // Default: Newest first
+    val sortDirection = _sortDirection.asStateFlow()
 
     private val _currentDuration = MutableStateFlow(0L)
     val currentDuration = _currentDuration.asStateFlow()
@@ -167,9 +194,119 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     private val _weeklyCalories = MutableStateFlow(0)
     val weeklyCalories = _weeklyCalories.asStateFlow()
 
+    private val _goalDistance = MutableStateFlow(10f)
+    val goalDistance = _goalDistance.asStateFlow()
+
+    private val _goalCalories = MutableStateFlow(2000)
+    val goalCalories = _goalCalories.asStateFlow()
+
+    private val _userWeight = MutableStateFlow(70f)
+    val userWeight = _userWeight.asStateFlow()
+
+    private val _userHeight = MutableStateFlow(175f)
+    val userHeight = _userHeight.asStateFlow()
+
+    val sortedRuns: StateFlow<List<RunEntity>> = combine(
+        _allRuns,
+        _sortOption,
+        _sortDirection
+    ) { runs, option, direction ->
+        sortRuns(runs, option, direction)
+    }.stateIn(
+        scope = viewModelScope,
+        started = SharingStarted.WhileSubscribed(5000),
+        initialValue = emptyList()
+    )
+
+    private fun sortRuns(
+        runs: List<RunEntity>,
+        option: SortOption,
+        direction: SortDirection
+    ): List<RunEntity> {
+        // 1. Define how to compare two runs based on the selected option
+        val comparator = when (option) {
+            SortOption.DATE -> compareBy<RunEntity> { it.timestamp }
+            SortOption.DISTANCE -> compareBy { it.distanceKm }
+            SortOption.DURATION -> compareBy { it.durationMillis }
+            SortOption.CALORIES -> compareBy { it.caloriesBurned }
+            SortOption.SPEED -> compareBy { it.avgSpeedKmh }
+        }
+
+        // 2. Apply the comparator in the correct direction
+        return if (direction == SortDirection.ASCENDING) {
+            runs.sortedWith(comparator)
+        } else {
+            runs.sortedWith(comparator.reversed())
+        }
+    }
+
+    // --- 5. NEW FUNCTIONS FOR UI TO CALL ---
+    fun updateSortOption(option: SortOption) {
+        _sortOption.value = option
+    }
+
+    fun updateSortDirection(direction: SortDirection) {
+        _sortDirection.value = direction
+    }
+
     init {
         loadRunsFromCloud()
+        loadGoalsFromCloud()
+        loadLocalProfile()
     }
+
+    // 1. Define the Trophy List
+    val achievementsList = listOf(
+        Achievement(
+            id = "first_run",
+            title = "First Steps",
+            description = "Complete your first run.",
+            icon = Icons.Rounded.DirectionsRun,
+            condition = { runs -> runs.isNotEmpty() }
+        ),
+        Achievement(
+            id = "speed_demon",
+            title = "Speed Demon",
+            description = "Reach an average speed of 12 km/h in a single run.",
+            icon = Icons.Rounded.Speed,
+            condition = { runs -> runs.any { it.avgSpeedKmh >= 12f } }
+        ),
+        Achievement(
+            id = "marathoner",
+            title = "Marathoner",
+            description = "Run a total of 42 km across all sessions.",
+            icon = Icons.Rounded.Map,
+            condition = { runs -> runs.map { it.distanceKm }.sum() >= 42f }
+        ),
+        Achievement(
+            id = "calorie_burner",
+            title = "Furnace",
+            description = "Burn 500 kcal in a single run.",
+            icon = Icons.Rounded.LocalFireDepartment,
+            condition = { runs -> runs.any { it.caloriesBurned >= 500 } }
+        ),
+        Achievement(
+            id = "night_owl",
+            title = "Night Owl",
+            description = "Go for a run after 8 PM.",
+            icon = Icons.Rounded.Bedtime,
+            condition = { runs ->
+                runs.any {
+                    val cal = Calendar.getInstance()
+                    cal.timeInMillis = it.timestamp
+                    val hour = cal.get(Calendar.HOUR_OF_DAY)
+                    hour >= 20 // 8 PM
+                }
+            }
+        ),
+        Achievement(
+            id = "consistent",
+            title = "Consistent",
+            description = "Complete 10 runs total.",
+            icon = Icons.Rounded.EmojiEvents,
+            condition = { runs -> runs.size >= 10 }
+        )
+    )
 
     // --- LOCATION CALLBACK ---
     private val locationCallback = object : LocationCallback() {
@@ -217,6 +354,14 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
+    data class Achievement(
+        val id: String,
+        val title: String,
+        val description: String,
+        val icon: ImageVector,
+        val condition: (List<RunEntity>) -> Boolean
+    )
+
     // --- ACTIONS ---
     @SuppressLint("MissingPermission")
     fun startLocationUpdates() {
@@ -224,6 +369,65 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
             .setMinUpdateDistanceMeters(2f)
             .build()
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
+    }
+
+    // ---GET CURRENT MONDAY DATE STRING ---
+    private fun getCurrentWeekStartDate(): String {
+        val calendar = Calendar.getInstance()
+        calendar.firstDayOfWeek = Calendar.MONDAY
+        // Go to Monday
+        while (calendar.get(Calendar.DAY_OF_WEEK) != Calendar.MONDAY) {
+            calendar.add(Calendar.DAY_OF_YEAR, -1)
+        }
+        val dateFormat = java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+        return dateFormat.format(calendar.time)
+    }
+
+    private fun loadLocalProfile() {
+        val prefs = getApplication<Application>().getSharedPreferences("run_app_prefs", android.content.Context.MODE_PRIVATE)
+        _userWeight.value = prefs.getFloat("weight", 70f)
+        _userHeight.value = prefs.getFloat("height", 175f)
+    }
+
+    fun updateUserProfile(weight: Float, height: Float) = viewModelScope.launch {
+        _userWeight.value = weight
+        _userHeight.value = height
+
+        // 1. Save Locally for speed
+        val prefs = getApplication<Application>().getSharedPreferences("run_app_prefs", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putFloat("weight", weight).putFloat("height", height).apply()
+
+        // 2. Sync with Cloud DB
+        val user = auth.currentUser
+        if (user != null) {
+            val name = user.displayName ?: "Runner"
+            RunApi.saveUserToDb(user.uid, name, weight.toString(), height.toString())
+        }
+    }
+
+    // --- FETCH GOALS FROM SERVER ---
+    fun loadGoalsFromCloud() = viewModelScope.launch {
+        val user = auth.currentUser ?: return@launch
+        val dateString = getCurrentWeekStartDate() // e.g., "2024-05-27"
+
+        val result = RunApi.fetchGoal(user.uid, dateString)
+        if (result != null) {
+            _goalDistance.value = result.first
+            _goalCalories.value = result.second
+        }
+    }
+
+    // --- SAVE GOALS TO SERVER ---
+    fun updateWeeklyGoals(distance: Float, calories: Int) = viewModelScope.launch {
+        // 1. Update UI immediately
+        _goalDistance.value = distance
+        _goalCalories.value = calories
+
+        val user = auth.currentUser ?: return@launch
+        val dateString = getCurrentWeekStartDate()
+
+        // 2. Send to Python Server
+        RunApi.saveGoal(user.uid, dateString, distance, calories)
     }
 
     fun startRun() {

@@ -10,11 +10,11 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object RunApi {
+    // 10.0.2.2 is the special IP for "localhost" from inside the Emulator
     private const val BASE_URL = "http://10.0.2.2:5000"
 
-    // 1. SAVE USER
+    // --- 1. SAVE USER ---
     suspend fun saveUserToDb(uid: String, name: String, weight: String, height: String): Boolean {
-        // ... (Keep your existing saveUserToDb code here, it is correct) ...
         return withContext(Dispatchers.IO) {
             try {
                 val url = URL("$BASE_URL/create_user")
@@ -42,7 +42,7 @@ object RunApi {
         }
     }
 
-    // 2. SAVE RUN
+    // --- 2. SAVE RUN ---
     suspend fun saveRun(uid: String, run: RunEntity, imageUrl: String?): Boolean {
         return withContext(Dispatchers.IO) {
             try {
@@ -59,7 +59,7 @@ object RunApi {
                     put("distance", run.distanceKm)
                     put("calories", run.caloriesBurned)
                     put("speed", run.avgSpeedKmh)
-                    put("path_points", "[]") // Simplified for now
+                    put("path_points", "[]")
                     put("image_url", imageUrl ?: "")
                 }
 
@@ -75,7 +75,7 @@ object RunApi {
         }
     }
 
-    // 3. GET RUNS
+    // --- 3. GET RUNS ---
     suspend fun getRuns(uid: String): List<RunEntity> {
         return withContext(Dispatchers.IO) {
             val list = mutableListOf<RunEntity>()
@@ -93,7 +93,6 @@ object RunApi {
                     }
                     reader.close()
 
-                    // Parse JSON Array
                     val jsonArray = JSONArray(response.toString())
                     for (i in 0 until jsonArray.length()) {
                         val item = jsonArray.getJSONObject(i)
@@ -105,7 +104,7 @@ object RunApi {
                                 distanceKm = item.getDouble("distance").toFloat(),
                                 caloriesBurned = item.getInt("calories"),
                                 avgSpeedKmh = item.getDouble("speed").toFloat(),
-                                imagePath = item.optString("image_url", "") // We use imagePath to store the URL now
+                                imagePath = item.optString("image_url", "")
                             )
                         )
                     }
@@ -116,22 +115,80 @@ object RunApi {
             return@withContext list
         }
     }
-    // 4. DELETE RUN (New)
+
+    // --- 4. DELETE RUN ---
     suspend fun deleteRun(runId: Int): Boolean {
         return withContext(Dispatchers.IO) {
             try {
-                // We send the ID in the URL: .../delete_run?run_id=123
                 val url = URL("$BASE_URL/delete_run?run_id=$runId")
                 val conn = url.openConnection() as HttpURLConnection
                 conn.requestMethod = "DELETE"
-
-                val responseCode = conn.responseCode
-                // 200 means "OK, Deleted"
-                return@withContext responseCode == 200
+                return@withContext conn.responseCode == 200
             } catch (e: Exception) {
                 e.printStackTrace()
                 return@withContext false
             }
+        }
+    }
+
+    // --- 5. SAVE GOAL ---
+    suspend fun saveGoal(uid: String, date: String, km: Float, cal: Int): Boolean {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = URL("$BASE_URL/set_weekly_goal")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "POST"
+                conn.setRequestProperty("Content-Type", "application/json")
+                conn.doOutput = true
+
+                val json = JSONObject().apply {
+                    put("uid", uid)
+                    put("week_start_date", date)
+                    put("target_km", km)
+                    put("target_calories", cal)
+                }
+
+                conn.outputStream.use { os ->
+                    val input = json.toString().toByteArray(Charsets.UTF_8)
+                    os.write(input, 0, input.size)
+                }
+                // 200 OK or 201 Created are both success
+                return@withContext (conn.responseCode == 200 || conn.responseCode == 201)
+            } catch (e: Exception) {
+                e.printStackTrace()
+                return@withContext false
+            }
+        }
+    }
+
+    // --- 6. FETCH GOAL ---
+    suspend fun fetchGoal(uid: String, date: String): Pair<Float, Int>? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = URL("$BASE_URL/get_weekly_goal?uid=$uid&week_start_date=$date")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+
+                if (conn.responseCode == 200) {
+                    val reader = BufferedReader(InputStreamReader(conn.inputStream))
+                    val response = StringBuilder()
+                    var line: String?
+                    while (reader.readLine().also { line = it } != null) {
+                        response.append(line)
+                    }
+                    reader.close()
+
+                    val json = JSONObject(response.toString())
+                    // Use optDouble/optInt with defaults to be safe
+                    val km = json.optDouble("target_km", 10.0).toFloat()
+                    val cal = json.optInt("target_calories", 2000)
+
+                    return@withContext Pair(km, cal)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            return@withContext null
         }
     }
 }

@@ -58,6 +58,8 @@ fun MainScreen(
         val recentRuns by viewModel.allRuns.collectAsState()
         val totalDistance by viewModel.totalDistance.collectAsState()
         val weeklyCalories by viewModel.weeklyCalories.collectAsState()
+        val goalDistance by viewModel.goalDistance.collectAsState()
+        val goalCalories by viewModel.goalCalories.collectAsState()
         var showStatsScreen by remember {mutableStateOf(false)}
 
         var showProfileScreen by remember { mutableStateOf(false) }
@@ -104,11 +106,11 @@ fun MainScreen(
             // DASHBOARD
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
 
-                // 1. BLUE HEADER BACKGROUND (Reduced Size)
+                // 1. BLUE HEADER BACKGROUND
                 Box(
                     modifier = Modifier
                         .fillMaxWidth()
-                        .height(235.dp) // <--- REDUCED from 280.dp
+                        .height(235.dp)
                         .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
                         .background(
                             brush = Brush.verticalGradient(
@@ -166,9 +168,9 @@ fun MainScreen(
                         // WEEKLY GOAL CARD
                         WeeklyGoalCard(
                             distanceKm = totalDistance,
-                            goalKm = 10f,
+                            goalKm = goalDistance,
                             calories = weeklyCalories,
-                            goalCalories = 2000,
+                            goalCalories = goalCalories,
                             onClick = { showStatsScreen = true }
                         )
 
