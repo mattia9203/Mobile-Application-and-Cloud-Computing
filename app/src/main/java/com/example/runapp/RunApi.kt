@@ -10,8 +10,7 @@ import java.net.HttpURLConnection
 import java.net.URL
 
 object RunApi {
-    // 10.0.2.2 is the special IP for "localhost" from inside the Emulator
-    private const val BASE_URL = "http://10.0.2.2:5000"
+    private const val BASE_URL = "https://runapp-server.onrender.com"
 
     // --- 1. SAVE USER ---
     suspend fun saveUserToDb(uid: String, name: String, weight: String, height: String): Boolean {
