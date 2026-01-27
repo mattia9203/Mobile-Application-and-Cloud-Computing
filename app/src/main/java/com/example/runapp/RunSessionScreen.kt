@@ -244,15 +244,28 @@ fun MapWithRunnerIcon(
         MapEffect(Unit) { map -> onMapLoaded(map) }
 
         // Change Polyline color if night mode (White looks better on dark map)
-        val polyColor = if (isNightMode) Color.Cyan else MaterialTheme.colorScheme.primary
+        key(isNightMode) {
 
-        if (pathPoints.isNotEmpty()) Polyline(points = pathPoints, color = polyColor, width = 15f)
-        if (currentLocation != null) {
-            MarkerComposable(state = MarkerState(position = currentLocation)) {
-                val iconVector = if (isSnapshotMode) Icons.Default.Place else Icons.Default.DirectionsRun
-                val tintColor = if (isSnapshotMode) Color.Red else polyColor
-                val size = if (isSnapshotMode) 40.dp else 36.dp
-                Icon(imageVector = iconVector, contentDescription = "User", tint = tintColor, modifier = Modifier.size(size).offset(y = actualBounce.dp))
+            // Recalculate color inside the key block
+            val polyColor = if (isNightMode) Color.Cyan else MaterialTheme.colorScheme.primary
+
+            if (pathPoints.isNotEmpty()) {
+                Polyline(points = pathPoints, color = polyColor, width = 15f)
+            }
+
+            if (currentLocation != null) {
+                MarkerComposable(state = MarkerState(position = currentLocation)) {
+                    val iconVector = if (isSnapshotMode) Icons.Default.Place else Icons.Default.DirectionsRun
+                    val tintColor = if (isSnapshotMode) Color.Red else polyColor
+                    val size = if (isSnapshotMode) 40.dp else 36.dp
+
+                    Icon(
+                        imageVector = iconVector,
+                        contentDescription = "User",
+                        tint = tintColor,
+                        modifier = Modifier.size(size).offset(y = actualBounce.dp)
+                    )
+                }
             }
         }
     }

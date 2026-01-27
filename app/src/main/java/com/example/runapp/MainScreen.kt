@@ -60,6 +60,8 @@ fun MainScreen(
         val weeklyCalories by viewModel.weeklyCalories.collectAsState()
         var showStatsScreen by remember {mutableStateOf(false)}
 
+        var showProfileScreen by remember { mutableStateOf(false) }
+
         // PERMISSIONS
         val permissionLauncher = rememberLauncherForActivityResult(
             contract = ActivityResultContracts.RequestMultiplePermissions()
@@ -90,7 +92,15 @@ fun MainScreen(
                 onBackClick = { showAllActivities = false },
                 onItemClick = { run -> selectedRun = run }
             )
-        } else {
+        } else if (showProfileScreen) {
+                ProfileScreen(
+                    viewModel = viewModel,
+                    onBackClick = { showProfileScreen = false },
+                    onLogoutClick = onSignOut // Pass the logout action up to MainActivity
+                )
+                androidx.activity.compose.BackHandler { showProfileScreen = false }
+            }
+        else {
             // DASHBOARD
             Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
 
@@ -110,7 +120,7 @@ fun MainScreen(
                 // 2. SCAFFOLD
                 Scaffold(
                     containerColor = Color.Transparent,
-                    topBar = { AppHeader(whiteText = true) },
+                    topBar = { AppHeader(whiteText = true, onProfileClick ={ showProfileScreen = true }) },
                     bottomBar = {
                         BottomAppBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 8.dp) {
                             IconButton(onClick = {}, modifier = Modifier.weight(1f)) {
@@ -152,14 +162,6 @@ fun MainScreen(
                         Text("READY TO RUN?", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = White.copy(alpha = 0.9f))
 
                         Spacer(modifier = Modifier.height(15.dp)) // Reduced from 30
-
-                        // LOGOUT BUTTON
-                        IconButton(onClick = {
-                            auth.signOut()
-                            onSignOut()
-                        }) {
-                            Icon(Icons.Default.ExitToApp, "Logout", tint = Color.Red)
-                        }
 
                         // WEEKLY GOAL CARD
                         WeeklyGoalCard(
@@ -410,7 +412,7 @@ fun formatDurationMain(millis: Long): String {
 }
 
 @Composable
-fun AppHeader(whiteText: Boolean = false) {
+fun AppHeader(whiteText: Boolean = false, onProfileClick: () -> Unit) {
     val auth = FirebaseAuth.getInstance()
     val user = auth.currentUser
     val displayName = user?.displayName ?: "Runner"
@@ -424,7 +426,11 @@ fun AppHeader(whiteText: Boolean = false) {
             Text(displayName, color = if (whiteText) White else MaterialTheme.colorScheme.onBackground, fontSize = 24.sp, fontWeight = FontWeight.Bold)
         }
         Box(
-            modifier = Modifier.size(45.dp).background(White.copy(alpha = 0.2f), CircleShape),
+            modifier = Modifier
+                .size(45.dp)
+                .background(White.copy(alpha = 0.2f), CircleShape)
+                .clip(CircleShape)
+                .clickable { onProfileClick() },
             contentAlignment = Alignment.Center
         ) {
             Icon(Icons.Default.Person, contentDescription = null, tint = if(whiteText) White else MaterialTheme.colorScheme.primary)

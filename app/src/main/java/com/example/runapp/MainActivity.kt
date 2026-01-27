@@ -22,6 +22,7 @@ class MainActivity : ComponentActivity() {
             AppNavigation() // <--- This decides which screen to show
         }
     }
+
 }
 
 @Composable
