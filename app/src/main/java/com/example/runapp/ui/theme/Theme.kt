@@ -8,18 +8,20 @@ import androidx.compose.material3.darkColorScheme
 import androidx.compose.material3.dynamicDarkColorScheme
 import androidx.compose.material3.dynamicLightColorScheme
 import androidx.compose.material3.lightColorScheme
-import androidx.compose.runtime.Composable // <--- THIS WAS MISSING
+import androidx.compose.runtime.Composable
 import androidx.compose.runtime.SideEffect
+import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.platform.LocalView
 import androidx.core.view.WindowCompat
 
+// --- UPDATED DARK THEME ---
 private val DarkColorScheme = darkColorScheme(
-    primary = PrimaryBlue,
+    primary = PrimaryBlue,    // Keep Blue
     secondary = SecondaryBlue,
-    background = DarkGray,
-    surface = DarkGray,
+    background = Color.Black, // <--- PITCH BLACK BACKGROUND
+    surface = Color.Black,    // <--- PITCH BLACK SURFACES (Cards will need borders or lighter grays to be visible)
     onPrimary = White,
     onBackground = White,
     onSurface = White,
@@ -42,11 +44,13 @@ fun RunAppTheme(
     dynamicColor: Boolean = false,
     content: @Composable () -> Unit
 ) {
+    // ... (Rest of the function stays exactly the same) ...
     val colorScheme = when {
         dynamicColor && Build.VERSION.SDK_INT >= Build.VERSION_CODES.S -> {
             val context = LocalContext.current
             if (darkTheme) dynamicDarkColorScheme(context) else dynamicLightColorScheme(context)
         }
+        darkTheme -> DarkColorScheme
         else -> LightColorScheme
     }
     val view = LocalView.current

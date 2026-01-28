@@ -9,6 +9,10 @@ val DarkMapStyle = MapStyleOptions("""
     "stylers": [{ "color": "#242f3e" }]
   },
   {
+    "elementType": "labels.icon",
+    "stylers": [{ "visibility": "off" }]
+  },
+  {
     "elementType": "labels.text.stroke",
     "stylers": [{ "color": "#242f3e" }]
   },

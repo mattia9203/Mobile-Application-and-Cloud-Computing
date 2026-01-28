@@ -32,17 +32,20 @@ import com.google.firebase.auth.FirebaseAuth
 import java.text.SimpleDateFormat
 import java.util.*
 import java.util.concurrent.TimeUnit
-
+import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
+import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
+import androidx.compose.ui.input.nestedscroll.nestedScroll
+@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
     onSignOut: () -> Unit,
     onNavigateToStats: () -> Unit = {}
 ) {
     val viewModel: RunViewModel = viewModel()
-    val auth = FirebaseAuth.getInstance()
-    val user = auth.currentUser
+    val isAppDarkMode by viewModel.isAppDarkMode.collectAsState() // Observe Dark Mode
 
-    RunAppTheme {
+
+    RunAppTheme(darkTheme = isAppDarkMode) {
         // STATES
         val runState by viewModel.runState.collectAsState()
         val isRunActive = runState != RunState.READY
@@ -61,7 +64,7 @@ fun MainScreen(
         val goalDistance by viewModel.goalDistance.collectAsState()
         val goalCalories by viewModel.goalCalories.collectAsState()
         var showStatsScreen by remember {mutableStateOf(false)}
-
+        var showSettingsScreen by remember { mutableStateOf(false) } // New State
         var showProfileScreen by remember { mutableStateOf(false) }
 
         // PERMISSIONS
@@ -72,6 +75,14 @@ fun MainScreen(
             val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) perms.add(Manifest.permission.ACTIVITY_RECOGNITION)
             permissionLauncher.launch(perms.toTypedArray())
+        }
+
+        val pullRefreshState = rememberPullToRefreshState()
+        if (pullRefreshState.isRefreshing) {
+            LaunchedEffect(true) {
+                viewModel.refreshData().join() // Wait for refresh to finish
+                pullRefreshState.endRefresh()
+            }
         }
 
         // --- MAIN UI STRUCTURE ---
@@ -98,13 +109,25 @@ fun MainScreen(
                 ProfileScreen(
                     viewModel = viewModel,
                     onBackClick = { showProfileScreen = false },
-                    onLogoutClick = onSignOut // Pass the logout action up to MainActivity
+                    onLogoutClick = onSignOut
                 )
                 androidx.activity.compose.BackHandler { showProfileScreen = false }
             }
-        else {
-            // DASHBOARD
-            Box(modifier = Modifier.fillMaxSize().background(MaterialTheme.colorScheme.background)) {
+        else if (showSettingsScreen) {
+            // NEW SETTINGS SCREEN
+            SettingsScreen(
+                viewModel = viewModel,
+                onBackClick = { showSettingsScreen = false }
+            )
+            androidx.activity.compose.BackHandler { showSettingsScreen = false }
+        } else {
+            // DASHBOARD with Pull-to-Refresh
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(MaterialTheme.colorScheme.background)
+                    .nestedScroll(pullRefreshState.nestedScrollConnection) // <--- 1. Detect Pull Gestures
+            ) {
 
                 // 1. BLUE HEADER BACKGROUND
                 Box(
@@ -122,15 +145,15 @@ fun MainScreen(
                 // 2. SCAFFOLD
                 Scaffold(
                     containerColor = Color.Transparent,
-                    topBar = { AppHeader(whiteText = true, onProfileClick ={ showProfileScreen = true }) },
+                    topBar = { AppHeader(whiteText = true, onProfileClick = { showProfileScreen = true }) },
                     bottomBar = {
                         BottomAppBar(containerColor = MaterialTheme.colorScheme.surface, tonalElevation = 8.dp) {
                             IconButton(onClick = {}, modifier = Modifier.weight(1f)) {
                                 Icon(Icons.Default.Home, "Home", tint = MaterialTheme.colorScheme.primary)
                             }
                             Spacer(Modifier.weight(1f))
-                            IconButton(onClick = {}, modifier = Modifier.weight(1f)) {
-                                Icon(Icons.Default.Person, "Profile", tint = MediumGray)
+                            IconButton(onClick = { showSettingsScreen = true}, modifier = Modifier.weight(1f)) {
+                                Icon(Icons.Default.Settings, "Settings", tint = MediumGray)
                             }
                         }
                     },
@@ -141,7 +164,9 @@ fun MainScreen(
                                 containerColor = MaterialTheme.colorScheme.primary,
                                 contentColor = White,
                                 shape = CircleShape,
-                                modifier = Modifier.size(70.dp).offset(y = 50.dp)
+                                modifier = Modifier
+                                    .size(70.dp)
+                                    .offset(y = 50.dp)
                             ) {
                                 Icon(Icons.Default.DirectionsRun, null, modifier = Modifier.size(35.dp))
                             }
@@ -156,14 +181,18 @@ fun MainScreen(
                             .padding(paddingValues)
                             .padding(horizontal = 20.dp)
                             .fillMaxSize()
-                            .verticalScroll(rememberScrollState()) // <--- ADDED SCROLL
+                            .verticalScroll(rememberScrollState()) // Allow normal scrolling
                     ) {
-                        // Spacers reduced to pull content up
-                        Spacer(modifier = Modifier.height(5.dp)) // Reduced from 10
+                        Spacer(modifier = Modifier.height(5.dp))
 
-                        Text("READY TO RUN?", fontSize = 24.sp, fontWeight = FontWeight.Bold, color = White.copy(alpha = 0.9f))
+                        Text(
+                            "READY TO RUN?",
+                            fontSize = 24.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = White.copy(alpha = 0.9f)
+                        )
 
-                        Spacer(modifier = Modifier.height(15.dp)) // Reduced from 30
+                        Spacer(modifier = Modifier.height(15.dp))
 
                         // WEEKLY GOAL CARD
                         WeeklyGoalCard(
@@ -186,20 +215,41 @@ fun MainScreen(
                         }
 
                         // RECENT ACTIVITY HEADER
-                        Row(modifier = Modifier.fillMaxWidth().padding(bottom = 10.dp), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                            Text("Recent Activity", fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onBackground)
+                        Row(
+                            modifier = Modifier
+                                .fillMaxWidth()
+                                .padding(bottom = 10.dp),
+                            horizontalArrangement = Arrangement.SpaceBetween,
+                            verticalAlignment = Alignment.CenterVertically
+                        ) {
+                            Text(
+                                "Recent Activity",
+                                fontSize = 20.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = MaterialTheme.colorScheme.onBackground
+                            )
                             TextButton(onClick = { showAllActivities = true }) {
                                 Text("See All", color = MaterialTheme.colorScheme.primary)
                             }
                         }
 
                         // RECENT ACTIVITY LIST
-                        RecentActivityPanel(runs = recentRuns, onItemClick = { run -> selectedRun = run })
+                        RecentActivityPanel(
+                            runs = recentRuns,
+                            onItemClick = { run -> selectedRun = run }
+                        )
 
-                        // Extra space at bottom so FAB doesn't cover last item
                         Spacer(modifier = Modifier.height(80.dp))
                     }
                 }
+
+                // --- 2. THE REFRESH SPINNER ---
+                PullToRefreshContainer(
+                    state = pullRefreshState,
+                    modifier = Modifier.align(Alignment.TopCenter),
+                    contentColor = MaterialTheme.colorScheme.primary,
+                    containerColor = Color.White
+                )
             }
         }
 
@@ -250,7 +300,7 @@ fun WeeklyGoalCard(
                     text = "Weekly Goals",
                     fontSize = 20.sp,
                     fontWeight = FontWeight.Bold,
-                    color = Color.Black
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Icon(
                     imageVector = Icons.Default.KeyboardArrowRight,

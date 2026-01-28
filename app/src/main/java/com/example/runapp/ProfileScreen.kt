@@ -1,5 +1,6 @@
 package com.example.runapp
 
+import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
@@ -33,6 +34,8 @@ import com.example.runapp.RunViewModel.Achievement
 import androidx.compose.ui.window.Dialog
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.items
+import androidx.compose.foundation.isSystemInDarkTheme
+
 
 
 @Composable
@@ -64,11 +67,12 @@ fun ProfileScreen(
     var showProfileDialog by remember { mutableStateOf(false) }
     var showGoalsDialog by remember { mutableStateOf(false) }
     var showAchievementsDialog by remember { mutableStateOf(false) }
+    val isSystemDark = isSystemInDarkTheme()
 
     Column(
         modifier = Modifier
             .fillMaxSize()
-            .background(Color(0xFFF5F7FA))
+            .background(MaterialTheme.colorScheme.background)
     ) {
         // --- HEADER SECTION ---
         Box(
@@ -127,13 +131,15 @@ fun ProfileScreen(
                 "Total Progress",
                 fontSize = 18.sp,
                 fontWeight = FontWeight.Bold,
+                color = MaterialTheme.colorScheme.onBackground,
                 modifier = Modifier.padding(bottom = 12.dp)
             )
 
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(16.dp),
                 elevation = CardDefaults.cardElevation(4.dp),
+                border = BorderStroke(1.dp, if (isSystemDark) Color.DarkGray else Color.Transparent),
                 modifier = Modifier.fillMaxWidth().height(100.dp)
             ) {
                 Row(
@@ -175,9 +181,10 @@ fun ProfileScreen(
 
             // 2. MENU LIST
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color.White),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(16.dp),
                 elevation = CardDefaults.cardElevation(4.dp),
+                border = BorderStroke(1.dp, if (isSystemDark) Color.DarkGray else Color.Transparent),
                 modifier = Modifier.fillMaxWidth()
             ) {
                 Column(modifier = Modifier.padding(vertical = 8.dp)) {
@@ -190,7 +197,6 @@ fun ProfileScreen(
                         onClick = { showProfileDialog = true}
                     )
 
-                    Divider(color = Color(0xFFF0F0F0), thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
 
                     ProfileMenuItem(
                         icon = Icons.Default.Flag, // Use Flag icon for goals
@@ -207,7 +213,6 @@ fun ProfileScreen(
                         onClick = { showAchievementsDialog = true }
                     )
 
-                    Divider(color = Color(0xFFF0F0F0), thickness = 1.dp, modifier = Modifier.padding(horizontal = 16.dp))
 
                     ProfileMenuItem(
                         icon = Icons.Default.Logout,
@@ -440,7 +445,7 @@ fun ProgressItem(icon: ImageVector, color: Color, value: String, unit: String) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, contentDescription = null, tint = color, modifier = Modifier.size(20.dp))
             Spacer(modifier = Modifier.width(4.dp))
-            Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+            Text(value, fontSize = 20.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
         }
         Text(unit, fontSize = 12.sp, color = Color.Gray)
     }
@@ -474,12 +479,7 @@ fun ProfileMenuItem(
                 Icon(icon, contentDescription = null, tint = iconColor, modifier = Modifier.size(24.dp))
             }
             Spacer(modifier = Modifier.width(16.dp))
-            Text(
-                text,
-                fontSize = 16.sp,
-                fontWeight = FontWeight.Medium,
-                color = if (isDestructive) Color.Red else Color.Black
-            )
+            Text(text, fontSize = 16.sp, fontWeight = FontWeight.Medium, color = if (isDestructive) Color.Red else MaterialTheme.colorScheme.onSurface)
         }
 
         if (!isDestructive) {

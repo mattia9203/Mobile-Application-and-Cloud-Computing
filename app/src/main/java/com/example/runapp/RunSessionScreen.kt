@@ -57,11 +57,23 @@ fun RunSessionScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // --- SENSORS SETUP ---
-    // 1. Light Sensor (Night Mode)
+    // --- 1. GET SETTINGS STATES ---
+    val isShakeEnabled by viewModel.isShakeEnabled.collectAsState()
+    val isLightEnabled by viewModel.isLightSensorEnabled.collectAsState()
+    val isAppDarkMode by viewModel.isAppDarkMode.collectAsState()
+
+    // --- 2. SENSORS SETUP ---
+    // Only use Light Sensor if enabled in settings
     val lightSensor = remember { LightSensor(context) }
     val luxLevel by lightSensor.lightLevel.collectAsState(initial = 1000f)
-    val isNightMode = luxLevel < 50f
+    // If setting is OFF, force Night Mode to FALSE (or follow System Dark Mode if you prefer)
+    val isNightMode = if (isLightEnabled) {
+        // Case A: Auto Mode is ON -> Use Sensor
+        luxLevel < 50f
+    } else {
+        // Case B: Auto Mode is OFF -> Use App Theme Setting
+        isAppDarkMode
+    }
 
     // 2. Shake Detector (Stop Confirmation)
     val shakeDetector = remember { ShakeDetector(context) }
@@ -81,13 +93,14 @@ fun RunSessionScreen(
     var isSaving by remember { mutableStateOf(false) }
     var isSnapshotMode by remember { mutableStateOf(false) }
     val weatherData by viewModel.weatherState.collectAsState()
+    var finalSnapshotLocation by remember { mutableStateOf<LatLng?>(null) }
 
     // Start Location
     LaunchedEffect(Unit) { viewModel.startLocationUpdates() }
 
-    // Listen for Shake Events (Only when Running)
-    LaunchedEffect(runState) {
-        if (runState == RunState.RUNNING) {
+
+    LaunchedEffect(runState, isShakeEnabled) { // <--- Added dependency
+        if (runState == RunState.RUNNING && isShakeEnabled) { // <--- Check Setting
             shakeDetector.shakeEvent.collect {
                 showShakeDialog = true
             }
@@ -99,6 +112,7 @@ fun RunSessionScreen(
         // MAP
         MapWithRunnerIcon(
             currentLocation = currentLatLng,
+            frozenLocation = finalSnapshotLocation,
             currentSpeedKmh = currentSpeedKmh,
             pathPoints = pathPoints,
             isSnapshotMode = isSnapshotMode,
@@ -153,6 +167,7 @@ fun RunSessionScreen(
                     isSaving = isSaving,
                     onTogglePause = { if (runState == RunState.RUNNING) viewModel.pauseRun() else viewModel.resumeRun() },
                     onStop = {
+                        finalSnapshotLocation = currentLatLng
                         finishRun(
                             scope = scope, isSaving = isSaving, mapRef = googleMapRef, context = context,
                             dist = distanceKm, speed = currentSpeedKmh, time = durationMillis, cals = calories, pathPoints = pathPoints,
@@ -208,12 +223,14 @@ fun DebugChip(text: String) {
 @Composable
 fun MapWithRunnerIcon(
     currentLocation: LatLng?,
+    frozenLocation: LatLng?,
     currentSpeedKmh: Float,
     pathPoints: List<LatLng>,
     isSnapshotMode: Boolean,
-    isNightMode: Boolean, // New Parameter
+    isNightMode: Boolean,
     onMapLoaded: (GoogleMap) -> Unit
 ) {
+    val displayLocation = if (isSnapshotMode) frozenLocation else currentLocation
     val defaultPos = LatLng(0.0, 0.0)
     val cameraPositionState = rememberCameraPositionState { position = CameraPosition.fromLatLngZoom(defaultPos, 17f) }
 
@@ -243,7 +260,7 @@ fun MapWithRunnerIcon(
     ) {
         MapEffect(Unit) { map -> onMapLoaded(map) }
 
-        // Change Polyline color if night mode (White looks better on dark map)
+        // Change Polyline color if night mode
         key(isNightMode) {
 
             // Recalculate color inside the key block
@@ -253,16 +270,16 @@ fun MapWithRunnerIcon(
                 Polyline(points = pathPoints, color = polyColor, width = 15f)
             }
 
-            if (currentLocation != null) {
-                MarkerComposable(state = MarkerState(position = currentLocation)) {
+            if (displayLocation != null && !isSnapshotMode) {
+                MarkerComposable(state = MarkerState(position = displayLocation)) {
                     val iconVector = if (isSnapshotMode) Icons.Default.Place else Icons.Default.DirectionsRun
-                    val tintColor = if (isSnapshotMode) Color.Red else polyColor
+                    val tintColor = polyColor
                     val size = if (isSnapshotMode) 40.dp else 36.dp
 
                     Icon(
                         imageVector = iconVector,
                         contentDescription = "User",
-                        tint = tintColor,
+                        tint = polyColor,
                         modifier = Modifier.size(size).offset(y = actualBounce.dp)
                     )
                 }
@@ -288,6 +305,7 @@ fun finishRun(
     onStartSave() // Shows loading indicator
 
     scope.launch {
+
         var savedPath: String? = null
 
         // We delegate the "Move & Snap" logic to the helper function
@@ -378,45 +396,6 @@ fun PanelStatItem(icon: ImageVector, iconColor: Color, value: String, unit: Stri
 @Composable
 fun PanelVerticalDivider() { Box(modifier = Modifier.height(24.dp).width(1.dp).background(Color.LightGray)) }
 
-@Composable
-fun MapWithRunnerIcon(
-    currentLocation: LatLng?,
-    currentSpeedKmh: Float,
-    pathPoints: List<LatLng>,
-    isSnapshotMode: Boolean,
-    onMapLoaded: (GoogleMap) -> Unit
-) {
-    val defaultPos = LatLng(0.0, 0.0)
-    val cameraPositionState = rememberCameraPositionState { position = CameraPosition.fromLatLngZoom(defaultPos, 17f) }
-
-    val infiniteTransition = rememberInfiniteTransition(label = "runnerAnim")
-    val bounceOffset by infiniteTransition.animateFloat(initialValue = 0f, targetValue = -10f, animationSpec = infiniteRepeatable(tween(300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "bounce")
-    val actualBounce = if (!isSnapshotMode && currentSpeedKmh > 1.0f) bounceOffset else 0f
-
-    LaunchedEffect(currentLocation, isSnapshotMode) {
-        if (currentLocation != null && !isSnapshotMode) {
-            cameraPositionState.animate(update = CameraUpdateFactory.newLatLngZoom(currentLocation, 17f), durationMs = 1000)
-        }
-    }
-
-    GoogleMap(
-        modifier = Modifier.fillMaxSize(),
-        cameraPositionState = cameraPositionState,
-        properties = MapProperties(isMyLocationEnabled = false),
-        uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = false, compassEnabled = false)
-    ) {
-        MapEffect(Unit) { map -> onMapLoaded(map) }
-        if (pathPoints.isNotEmpty()) Polyline(points = pathPoints, color = MaterialTheme.colorScheme.primary, width = 15f)
-        if (currentLocation != null) {
-            MarkerComposable(state = MarkerState(position = currentLocation)) {
-                val iconVector = if (isSnapshotMode) Icons.Default.Place else Icons.Default.DirectionsRun
-                val tintColor = if (isSnapshotMode) Color.Red else MaterialTheme.colorScheme.primary
-                val size = if (isSnapshotMode) 40.dp else 36.dp
-                Icon(imageVector = iconVector, contentDescription = "User", tint = tintColor, modifier = Modifier.size(size).offset(y = actualBounce.dp))
-            }
-        }
-    }
-}
 
 // --- WEATHER HELPERS ---
 
@@ -522,7 +501,7 @@ fun WeatherWidget(weatherData: Triple<String, Int, Int>?) {
 suspend fun captureMapSnapshot(
     context: Context,
     googleMap: GoogleMap,
-    pathPoints: List<LatLng> // <--- NEW PARAMETER
+    pathPoints: List<LatLng>
 ): String? {
     if (pathPoints.isEmpty()) return null
 
@@ -559,9 +538,7 @@ suspend fun captureMapSnapshot(
                 }
             }
         } catch (e: Exception) {
-            // Fallback: If bounds fail (e.g., single point), just take a snapshot of current view
             googleMap.snapshot { bitmap ->
-                // ... (simple save logic if needed, or just return null)
                 continuation.resume(null)
             }
         }

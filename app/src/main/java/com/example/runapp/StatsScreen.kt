@@ -31,6 +31,8 @@ import java.text.SimpleDateFormat
 import java.util.*
 import kotlin.math.roundToInt
 import androidx.compose.ui.graphics.drawscope.Fill
+import androidx.compose.foundation.isSystemInDarkTheme
+import androidx.compose.foundation.BorderStroke
 
 @Composable
 fun StatsScreen(
@@ -41,6 +43,7 @@ fun StatsScreen(
     val chartData by viewModel.weeklyChartData.collectAsState()
     val totalValue by viewModel.currentWeekTotal.collectAsState()
     val weekStartMillis by viewModel.currentWeekStartMillis.collectAsState()
+    val isAppDarkMode by viewModel.isAppDarkMode.collectAsState()
 
     // Determine unit string for the chart tooltip
     val unitStr = when (selectedType) {
@@ -64,7 +67,8 @@ fun StatsScreen(
                 }
                 Text("Statistics", fontSize = 24.sp, fontWeight = FontWeight.Bold)
             }
-        }
+        },
+        containerColor = MaterialTheme.colorScheme.background // Black in Dark Mode
     ) { padding ->
         Column(
             modifier = Modifier
@@ -79,7 +83,8 @@ fun StatsScreen(
             WeekDaysStrip(
                 weekStartMillis = weekStartMillis,
                 onPrevClick = { viewModel.previousWeek() },
-                onNextClick = { viewModel.nextWeek() }
+                onNextClick = { viewModel.nextWeek() },
+                isDarkMode = isAppDarkMode
             )
 
             Spacer(modifier = Modifier.height(24.dp))
@@ -93,14 +98,15 @@ fun StatsScreen(
             Spacer(modifier = Modifier.height(24.dp))
 
             Card(
-                colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F7FA)),
+                colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(24.dp),
+                border = BorderStroke(1.dp, if (isAppDarkMode) Color.DarkGray else Color.Transparent),
                 modifier = Modifier
                     .fillMaxWidth()
                     .height(400.dp)
             ) {
                 Column(modifier = Modifier.padding(24.dp)) {
-                    Text(totalValue, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                    Text(totalValue, fontSize = 32.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
 
                     val dateFormat = SimpleDateFormat("MMM dd", Locale.getDefault())
                     val cal = Calendar.getInstance()
@@ -113,15 +119,15 @@ fun StatsScreen(
 
                     Spacer(modifier = Modifier.height(30.dp))
 
-                    // FIXED: Now passing 'selectedType' so the chart knows how to format numbers
                     SmoothLineGraph(
                         data = chartData,
                         unit = unitStr,
-                        selectedType = selectedType, // <--- ADDED THIS
+                        selectedType = selectedType,
                         modifier = Modifier
                             .fillMaxWidth()
                             .weight(1f),
-                        lineColor = MaterialTheme.colorScheme.primary
+                        lineColor = if(isSystemInDarkTheme()) Color.Cyan else MaterialTheme.colorScheme.primary,
+                        textColor = if(isSystemInDarkTheme()) android.graphics.Color.WHITE else android.graphics.Color.parseColor("#9E9E9E")
                     )
                 }
             }
@@ -165,27 +171,26 @@ fun StatsChip(text: String, isSelected: Boolean, onClick: () -> Unit) {
 fun WeekDaysStrip(
     weekStartMillis: Long,
     onPrevClick: () -> Unit,
-    onNextClick: () -> Unit
+    onNextClick: () -> Unit,
+    isDarkMode: Boolean // <--- Pass this down
 ) {
     val days = listOf("M", "T", "W", "T", "F", "S", "S")
     val calendar = Calendar.getInstance()
-
     val todayCal = Calendar.getInstance()
+    // ... (logic) ...
     val isCurrentWeek = todayCal.timeInMillis >= weekStartMillis &&
             todayCal.timeInMillis < (weekStartMillis + 7 * 24 * 60 * 60 * 1000)
-
     val currentDayInt = todayCal.get(Calendar.DAY_OF_WEEK)
     val todayIndex = if (currentDayInt == Calendar.SUNDAY) 6 else currentDayInt - 2
 
     Card(
-        colors = CardDefaults.cardColors(containerColor = Color(0xFFF5F7FA)),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), // <--- FIX
         shape = RoundedCornerShape(16.dp),
+        border = BorderStroke(1.dp, if (isDarkMode) Color.DarkGray else Color.Transparent), // <--- FIX
         modifier = Modifier.fillMaxWidth()
     ) {
         Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(16.dp),
+            modifier = Modifier.fillMaxWidth().padding(16.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically
         ) {
@@ -210,15 +215,14 @@ fun WeekDaysStrip(
                         contentAlignment = Alignment.Center
                     ) {
                         Text(
-                            text = dateNum.toString(),
+                            text = dateNum.toString(), // (Use real date here)
                             fontSize = 14.sp,
-                            color = if (isToday) Color.White else Color.Black,
+                            color = if (isToday) Color.White else MaterialTheme.colorScheme.onSurface,
                             fontWeight = if (isToday) FontWeight.Bold else FontWeight.Normal
                         )
                     }
                 }
             }
-
             IconButton(onClick = onNextClick, modifier = Modifier.size(24.dp)) {
                 Icon(Icons.Default.KeyboardArrowRight, null, tint = Color.Gray)
             }
@@ -231,16 +235,17 @@ fun WeekDaysStrip(
 fun SmoothLineGraph(
     data: List<Float>,
     unit: String,
-    selectedType: StatsType, // <--- ADDED PARAMETER HERE
+    selectedType: StatsType,
     modifier: Modifier = Modifier,
-    lineColor: Color = HeaderBlueStart
+    lineColor: Color = HeaderBlueStart,
+    textColor: Int
 ) {
     val daysLabels = listOf("Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun")
     var selectedDayIndex by remember { mutableStateOf(-1) }
 
     val axisLabelPaint = remember {
         Paint().apply {
-            color = android.graphics.Color.parseColor("#9E9E9E")
+            color = textColor
             textSize = 32f
             textAlign = Paint.Align.RIGHT
             isAntiAlias = true
@@ -248,7 +253,7 @@ fun SmoothLineGraph(
     }
     val bottomLabelPaint = remember {
         Paint().apply {
-            color = android.graphics.Color.parseColor("#9E9E9E")
+            color = textColor
             textSize = 32f
             textAlign = Paint.Align.CENTER
             isAntiAlias = true

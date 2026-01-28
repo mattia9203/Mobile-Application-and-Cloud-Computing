@@ -23,6 +23,8 @@ import kotlinx.coroutines.flow.combine
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.stateIn
 import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
 import java.util.Calendar
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material.icons.rounded.Speed
@@ -54,6 +56,15 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     // --- CLOUD SETUP ---
     private val auth = FirebaseAuth.getInstance()
     private val fusedLocationClient = LocationServices.getFusedLocationProviderClient(application)
+
+    private val _isAppDarkMode = MutableStateFlow(false)
+    val isAppDarkMode = _isAppDarkMode.asStateFlow()
+
+    private val _isShakeEnabled = MutableStateFlow(true)
+    val isShakeEnabled = _isShakeEnabled.asStateFlow()
+
+    private val _isLightSensorEnabled = MutableStateFlow(true)
+    val isLightSensorEnabled = _isLightSensorEnabled.asStateFlow()
 
     // --- LIVE RUN STATE ---
     private val _runState = MutableStateFlow(RunState.READY)
@@ -249,10 +260,49 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         _sortDirection.value = direction
     }
 
+    fun refreshData() = viewModelScope.launch {
+
+        // Reload everything from server
+        val runsDeferred = async { loadRunsFromCloud() }
+        val goalsDeferred = async { loadGoalsFromCloud() }
+        val profileDeferred = async { loadLocalProfile() }
+
+        // 3. Wait for all to finish
+        awaitAll(runsDeferred, goalsDeferred, profileDeferred)
+    }
+
     init {
         loadRunsFromCloud()
         loadGoalsFromCloud()
         loadLocalProfile()
+        loadSettings()
+    }
+
+    private fun loadSettings() {
+        val prefs = getApplication<Application>().getSharedPreferences("run_app_prefs", android.content.Context.MODE_PRIVATE)
+        _isAppDarkMode.value = prefs.getBoolean("dark_mode", false)
+        _isShakeEnabled.value = prefs.getBoolean("shake_enabled", true)
+        _isLightSensorEnabled.value = prefs.getBoolean("light_sensor_enabled", true)
+    }
+
+    fun toggleDarkMode(enabled: Boolean) {
+        _isAppDarkMode.value = enabled
+        saveBoolean("dark_mode", enabled)
+    }
+
+    fun toggleShake(enabled: Boolean) {
+        _isShakeEnabled.value = enabled
+        saveBoolean("shake_enabled", enabled)
+    }
+
+    fun toggleLightSensor(enabled: Boolean) {
+        _isLightSensorEnabled.value = enabled
+        saveBoolean("light_sensor_enabled", enabled)
+    }
+
+    private fun saveBoolean(key: String, value: Boolean) {
+        val prefs = getApplication<Application>().getSharedPreferences("run_app_prefs", android.content.Context.MODE_PRIVATE)
+        prefs.edit().putBoolean(key, value).apply()
     }
 
     // 1. Define the Trophy List
@@ -365,8 +415,8 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     // --- ACTIONS ---
     @SuppressLint("MissingPermission")
     fun startLocationUpdates() {
-        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 2000)
-            .setMinUpdateDistanceMeters(2f)
+        val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000)
+            .setMinUpdateDistanceMeters(0f)
             .build()
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
     }

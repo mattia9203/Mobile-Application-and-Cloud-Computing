@@ -62,14 +62,14 @@ fun AllActivitiesScreen(
                     }
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = Color.White,
-                    titleContentColor = Color.Black,
-                    navigationIconContentColor = Color.Black,
-                    actionIconContentColor = Color.Black
+                    containerColor = MaterialTheme.colorScheme.surface,
+                    titleContentColor = MaterialTheme.colorScheme.surface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.surface,
+                    actionIconContentColor = MaterialTheme.colorScheme.surface
                 )
             )
         },
-        containerColor = Color.White // <--- WHITE BACKGROUND
+        containerColor = MaterialTheme.colorScheme.background
     ) { paddingValues ->
         Box(modifier = Modifier.padding(paddingValues).fillMaxSize()) {
             if (sortedRuns.isEmpty()) {
@@ -208,7 +208,7 @@ fun RunHistoryItem(
         modifier = Modifier.fillMaxWidth().clickable(onClick = onClick),
         shape = RoundedCornerShape(12.dp),
         border = BorderStroke(1.dp, CardBorderColor),
-        colors = CardDefaults.cardColors(containerColor = CardBackgroundColor), // Uses the new Grey Color
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface), // Uses the new Grey Color
         elevation = CardDefaults.cardElevation(defaultElevation = 2.dp)
     ) {
         Row(
@@ -234,7 +234,8 @@ fun RunHistoryItem(
                 Text(
                     "${"%.2f".format(Locale.US, run.distanceKm)} km",
                     fontSize = 18.sp,
-                    fontWeight = FontWeight.Bold
+                    fontWeight = FontWeight.Bold,
+                    color = MaterialTheme.colorScheme.onSurface
                 )
                 Spacer(modifier = Modifier.height(4.dp))
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
