@@ -44,6 +44,9 @@ fun MainScreen(
     val viewModel: RunViewModel = viewModel()
     val isAppDarkMode by viewModel.isAppDarkMode.collectAsState() // Observe Dark Mode
 
+    LaunchedEffect(Unit) {
+        viewModel.loadGoalsFromCloud()
+    }
 
     RunAppTheme(darkTheme = isAppDarkMode) {
         // STATES
@@ -66,6 +69,7 @@ fun MainScreen(
         var showStatsScreen by remember {mutableStateOf(false)}
         var showSettingsScreen by remember { mutableStateOf(false) } // New State
         var showProfileScreen by remember { mutableStateOf(false) }
+        val showWelcome by viewModel.showWelcomeDialog.collectAsState()
 
         // PERMISSIONS
         val permissionLauncher = rememberLauncherForActivityResult(
@@ -263,11 +267,116 @@ fun MainScreen(
                 }
             )
         }
+        if (showWelcome) {
+            WelcomeGoalsDialog(
+                onSave = { d, c -> viewModel.completeOnboarding(d, c) }
+            )
+        }
     }
 }
 
 // --- HELPER COMPONENTS ---
 
+@Composable
+fun WelcomeGoalsDialog(onSave: (Float, Int) -> Unit) {
+    var distText by remember { mutableStateOf("") }
+    var calText by remember { mutableStateOf("") }
+
+    androidx.compose.ui.window.Dialog(onDismissRequest = {  }) {
+        Card(
+            shape = RoundedCornerShape(24.dp),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
+            elevation = CardDefaults.cardElevation(10.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            Column(
+                horizontalAlignment = Alignment.CenterHorizontally
+            ) {
+                // Header
+                Box(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .height(120.dp)
+                        .background(
+                            Brush.verticalGradient(
+                                colors = listOf(HeaderBlueStart, HeaderBlueEnd)
+                            )
+                        ),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                        Icon(
+                            imageVector = Icons.Default.Flag,
+                            contentDescription = null,
+                            tint = Color.White,
+                            modifier = Modifier.size(40.dp)
+                        )
+                        Spacer(modifier = Modifier.height(8.dp))
+                        Text(
+                            text = "Welcome, Runner!",
+                            fontSize = 22.sp,
+                            fontWeight = FontWeight.Bold,
+                            color = Color.White
+                        )
+                        Text(
+                            text = "Let's set your first targets.",
+                            fontSize = 14.sp,
+                            color = Color.White.copy(alpha = 0.8f)
+                        )
+                    }
+                }
+
+                // Inputs
+                Column(modifier = Modifier.padding(24.dp)) {
+                    OutlinedTextField(
+                        value = distText,
+                        onValueChange = { distText = it },
+                        label = { Text("Weekly Distance (km)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = Color.Gray.copy(alpha = 0.5f)
+                        ),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                    )
+
+                    Spacer(modifier = Modifier.height(16.dp))
+
+                    OutlinedTextField(
+                        value = calText,
+                        onValueChange = { calText = it },
+                        label = { Text("Weekly Calories (kcal)") },
+                        singleLine = true,
+                        modifier = Modifier.fillMaxWidth(),
+                        shape = RoundedCornerShape(12.dp),
+                        colors = OutlinedTextFieldDefaults.colors(
+                            focusedBorderColor = MaterialTheme.colorScheme.primary,
+                            unfocusedBorderColor = Color.Gray.copy(alpha = 0.5f)
+                        ),
+                        keyboardOptions = androidx.compose.foundation.text.KeyboardOptions(keyboardType = androidx.compose.ui.text.input.KeyboardType.Number)
+                    )
+
+                    Spacer(modifier = Modifier.height(24.dp))
+
+                    Button(
+                        onClick = {
+                            val d = distText.toFloatOrNull() ?: 10f
+                            val c = calText.toIntOrNull() ?: 2000
+                            onSave(d, c)
+                        },
+                        modifier = Modifier.fillMaxWidth().height(50.dp),
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        shape = RoundedCornerShape(12.dp)
+                    ) {
+                        Text("Let's Go!", fontSize = 16.sp, fontWeight = FontWeight.Bold, color = Color.White)
+                    }
+                }
+            }
+        }
+    }
+}
 @Composable
 fun WeeklyGoalCard(
     distanceKm: Float,
@@ -342,11 +451,6 @@ fun WeeklyGoalCard(
         }
     }
 }
-
-// ... (KEEP THE REST: CurrentSessionPanel, RecentActivityPanel, RecentActivityItem, SmallStat, AppHeader, formatDurationMain) ...
-// (Be sure to copy the rest of the helpers from your previous file if you overwrite the whole thing)
-
-// RE-ADDING THE MISSING HELPERS BELOW SO YOU CAN COPY-PASTE THE WHOLE FILE SAFELY:
 
 @Composable
 fun CurrentSessionPanel(

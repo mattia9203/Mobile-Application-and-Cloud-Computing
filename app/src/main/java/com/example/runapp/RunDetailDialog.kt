@@ -41,10 +41,9 @@ fun RunDetailDialog(
         ) {
             Column(modifier = Modifier.fillMaxSize()) {
 
-                // --- TOP: MAP IMAGE (UPDATED FOR CLOUD) ---
+                // --- TOP: MAP IMAGE ---
                 Box(modifier = Modifier.fillMaxWidth().weight(1.1f).background(NearWhite)) {
 
-                    // FIXED: Replaced BitmapFactory with AsyncImage (Coil)
                     AsyncImage(
                         model = run.imagePath,
                         contentDescription = "Run Map",
@@ -63,7 +62,7 @@ fun RunDetailDialog(
                             .statusBarsPadding(),
                         horizontalArrangement = Arrangement.SpaceBetween
                     ) {
-                        SmallIconButton(Icons.Default.Close, onClick = onDismiss)
+                        SmallIconButton(Icons.Default.Close, onClick = onDismiss, tint = Black)
                         SmallIconButton(Icons.Default.Delete, onClick = onDelete, tint = RedError)
                     }
                 }

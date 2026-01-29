@@ -41,7 +41,6 @@ import java.util.concurrent.TimeUnit
 import com.example.runapp.ui.theme.*
 import androidx.compose.material.icons.rounded.WbSunny
 import androidx.compose.material.icons.rounded.Cloud
-import androidx.compose.material.icons.rounded.Grain
 import androidx.compose.material.icons.rounded.Thunderstorm
 import androidx.compose.material.icons.rounded.AcUnit
 import androidx.compose.material.icons.rounded.Star
@@ -57,70 +56,59 @@ fun RunSessionScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    // --- 1. GET SETTINGS STATES ---
+    // --- SETTINGS & SENSORS ---
     val isShakeEnabled by viewModel.isShakeEnabled.collectAsState()
     val isLightEnabled by viewModel.isLightSensorEnabled.collectAsState()
     val isAppDarkMode by viewModel.isAppDarkMode.collectAsState()
 
-    // --- 2. SENSORS SETUP ---
-    // Only use Light Sensor if enabled in settings
     val lightSensor = remember { LightSensor(context) }
     val luxLevel by lightSensor.lightLevel.collectAsState(initial = 1000f)
-    // If setting is OFF, force Night Mode to FALSE (or follow System Dark Mode if you prefer)
-    val isNightMode = if (isLightEnabled) {
-        // Case A: Auto Mode is ON -> Use Sensor
-        luxLevel < 50f
-    } else {
-        // Case B: Auto Mode is OFF -> Use App Theme Setting
-        isAppDarkMode
-    }
 
-    // 2. Shake Detector (Stop Confirmation)
+    val isNightMode = if (isLightEnabled) luxLevel < 50f else isAppDarkMode
+
     val shakeDetector = remember { ShakeDetector(context) }
     var showShakeDialog by remember { mutableStateOf(false) }
 
-    // --- VIEWMODEL STATE ---
+    // --- VIEWMODEL DATA ---
     val runState by viewModel.runState.collectAsState()
     val durationMillis by viewModel.currentDuration.collectAsState()
     val distanceKm by viewModel.currentDistance.collectAsState()
     val currentSpeedKmh by viewModel.currentSpeed.collectAsState()
     val calories by viewModel.currentCalories.collectAsState()
-
     val currentLatLng by viewModel.currentLocation.collectAsState()
     val pathPoints by viewModel.pathPoints.collectAsState()
-
-    var googleMapRef by remember { mutableStateOf<GoogleMap?>(null) }
-    var isSaving by remember { mutableStateOf(false) }
-    var isSnapshotMode by remember { mutableStateOf(false) }
     val weatherData by viewModel.weatherState.collectAsState()
+
+    // --- LOCAL UI STATE ---
+    var googleMapRef by remember { mutableStateOf<GoogleMap?>(null) }
+    // We use isSaving to control BOTH the spinner AND the "Snapshot Mode" (Pin Icon)
+    var isSaving by remember { mutableStateOf(false) }
     var finalSnapshotLocation by remember { mutableStateOf<LatLng?>(null) }
 
-    // Start Location
+    // Start Location Updates
     LaunchedEffect(Unit) { viewModel.startLocationUpdates() }
 
-
-    LaunchedEffect(runState, isShakeEnabled) { // <--- Added dependency
-        if (runState == RunState.RUNNING && isShakeEnabled) { // <--- Check Setting
-            shakeDetector.shakeEvent.collect {
-                showShakeDialog = true
-            }
+    // Shake Detection
+    LaunchedEffect(runState, isShakeEnabled) {
+        if (runState == RunState.RUNNING && isShakeEnabled) {
+            shakeDetector.shakeEvent.collect { showShakeDialog = true }
         }
     }
 
     Box(modifier = Modifier.fillMaxSize()) {
 
-        // MAP
+        // 1. THE MAP LAYER
         MapWithRunnerIcon(
             currentLocation = currentLatLng,
             frozenLocation = finalSnapshotLocation,
             currentSpeedKmh = currentSpeedKmh,
             pathPoints = pathPoints,
-            isSnapshotMode = isSnapshotMode,
+            isSaving = isSaving, // Passing isSaving directly to control the icon
             isNightMode = isNightMode,
             onMapLoaded = { googleMapRef = it }
         )
 
-        // BACK BUTTON
+        // 2. BACK BUTTON
         Box(
             modifier = Modifier
                 .padding(start = 20.dp, top = 40.dp)
@@ -136,50 +124,71 @@ fun RunSessionScreen(
             Icon(Icons.Default.KeyboardArrowLeft, "Back", tint = Color.Black)
         }
 
+        // 3. WEATHER WIDGET
         Box(modifier = Modifier.align(Alignment.TopEnd)) {
             WeatherWidget(weatherData = weatherData)
         }
 
-        // BOTTOM PANEL
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .fillMaxWidth()
-                .padding(16.dp)
-                .zIndex(2f)
-        ) {
-            if (runState == RunState.READY) {
-                Button(
-                    onClick = { viewModel.startRun() },
-                    colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                    modifier = Modifier.fillMaxWidth().height(56.dp),
-                    shape = RoundedCornerShape(28.dp)
-                ) {
-                    Text("START RUNNING", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                }
-            } else {
-                RunInfoPanel(
-                    durationMillis = durationMillis,
-                    distanceKm = distanceKm,
-                    calories = calories,
-                    speedKmh = currentSpeedKmh,
-                    runState = runState,
-                    isSaving = isSaving,
-                    onTogglePause = { if (runState == RunState.RUNNING) viewModel.pauseRun() else viewModel.resumeRun() },
-                    onStop = {
-                        finalSnapshotLocation = currentLatLng
-                        finishRun(
-                            scope = scope, isSaving = isSaving, mapRef = googleMapRef, context = context,
-                            dist = distanceKm, speed = currentSpeedKmh, time = durationMillis, cals = calories, pathPoints = pathPoints,
-                            onStartSave = { isSaving = true; isSnapshotMode = true },
-                            onResult = { entity -> viewModel.stopRun(); onStopClick(entity) }
-                        )
+        // 4. BOTTOM CONTROLS
+        // Hide controls if we are saving (Snapshotting)
+        if (!isSaving) {
+            Box(
+                modifier = Modifier
+                    .align(Alignment.BottomCenter)
+                    .fillMaxWidth()
+                    .padding(16.dp)
+                    .zIndex(2f)
+            ) {
+                if (runState == RunState.READY) {
+                    Button(
+                        onClick = { viewModel.startRun() },
+                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                        modifier = Modifier.fillMaxWidth().height(56.dp),
+                        shape = RoundedCornerShape(28.dp)
+                    ) {
+                        Text("START RUNNING", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
                     }
-                )
+                } else {
+                    RunInfoPanel(
+                        durationMillis = durationMillis,
+                        distanceKm = distanceKm,
+                        calories = calories,
+                        speedKmh = currentSpeedKmh,
+                        runState = runState,
+                        isSaving = isSaving,
+                        onTogglePause = { if (runState == RunState.RUNNING) viewModel.pauseRun() else viewModel.resumeRun() },
+                        onStop = {
+                            // --- STOP SEQUENCE ---
+                            viewModel.pauseRun() // 1. Stop path growth
+                            finalSnapshotLocation = currentLatLng // 2. Lock location
+
+                            finishRun(
+                                scope = scope,
+                                isSaving = isSaving,
+                                mapRef = googleMapRef,
+                                context = context,
+                                dist = distanceKm, speed = currentSpeedKmh, time = durationMillis, cals = calories, pathPoints = pathPoints,
+                                onStartSave = { isSaving = true }, // 3. Set Saving (Triggers Map to switch to Pin)
+                                onResult = { entity -> viewModel.stopRun(); onStopClick(entity) }
+                            )
+                        }
+                    )
+                }
+            }
+        } else {
+            // 5. LOADING SPINNER (Visible when isSaving = true)
+            Box(
+                modifier = Modifier
+                    .fillMaxSize()
+                    .background(Color.Black.copy(alpha = 0.4f))
+                    .zIndex(3f),
+                contentAlignment = Alignment.Center
+            ) {
+                CircularProgressIndicator(color = Color.White)
             }
         }
 
-        // --- SHAKE CONFIRMATION DIALOG ---
+        // --- SHAKE DIALOG ---
         if (showShakeDialog) {
             AlertDialog(
                 onDismissRequest = { showShakeDialog = false },
@@ -190,33 +199,24 @@ fun RunSessionScreen(
                     Button(
                         onClick = {
                             showShakeDialog = false
-                            // Trigger the exact same stop logic as the button
+                            viewModel.pauseRun()
+                            finalSnapshotLocation = currentLatLng
+
                             finishRun(
                                 scope = scope, isSaving = isSaving, mapRef = googleMapRef, context = context,
                                 dist = distanceKm, speed = currentSpeedKmh, time = durationMillis, cals = calories, pathPoints = pathPoints,
-                                onStartSave = { isSaving = true; isSnapshotMode = true },
+                                onStartSave = { isSaving = true },
                                 onResult = { entity -> viewModel.stopRun(); onStopClick(entity) }
                             )
                         },
                         colors = ButtonDefaults.buttonColors(containerColor = Color.Red)
-                    ) {
-                        Text("Stop Run", color = Color.White)
-                    }
+                    ) { Text("Stop Run", color = Color.White) }
                 },
                 dismissButton = {
-                    TextButton(onClick = { showShakeDialog = false }) {
-                        Text("Keep Running")
-                    }
+                    TextButton(onClick = { showShakeDialog = false }) { Text("Keep Running") }
                 }
             )
         }
-    }
-}
-
-@Composable
-fun DebugChip(text: String) {
-    Box(modifier = Modifier.background(Color.Black.copy(alpha=0.5f), RoundedCornerShape(8.dp)).padding(8.dp)) {
-        Text(text, color = Color.White, fontSize = 12.sp)
     }
 }
 
@@ -226,62 +226,74 @@ fun MapWithRunnerIcon(
     frozenLocation: LatLng?,
     currentSpeedKmh: Float,
     pathPoints: List<LatLng>,
-    isSnapshotMode: Boolean,
+    isSaving: Boolean, // <--- Using isSaving to drive the display logic
     isNightMode: Boolean,
     onMapLoaded: (GoogleMap) -> Unit
 ) {
-    val displayLocation = if (isSnapshotMode) frozenLocation else currentLocation
+    // 1. FREEZE LOCATION LOGIC
+    // If saving, force the map to use the Frozen location. This stops the "Man" from moving.
+    val displayLocation = if (isSaving) frozenLocation else currentLocation
+
     val defaultPos = LatLng(0.0, 0.0)
     val cameraPositionState = rememberCameraPositionState { position = CameraPosition.fromLatLngZoom(defaultPos, 17f) }
 
+    // Bounce Animation (Only when NOT saving and actually moving)
     val infiniteTransition = rememberInfiniteTransition(label = "runnerAnim")
     val bounceOffset by infiniteTransition.animateFloat(initialValue = 0f, targetValue = -10f, animationSpec = infiniteRepeatable(tween(300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "bounce")
-    val actualBounce = if (!isSnapshotMode && currentSpeedKmh > 1.0f) bounceOffset else 0f
+    val actualBounce = if (!isSaving && currentSpeedKmh > 1.0f) bounceOffset else 0f
 
-    LaunchedEffect(currentLocation, isSnapshotMode) {
-        if (currentLocation != null && !isSnapshotMode) {
+    // Camera follow logic (Only follow if NOT saving)
+    LaunchedEffect(currentLocation, isSaving) {
+        if (currentLocation != null && !isSaving) {
             cameraPositionState.animate(update = CameraUpdateFactory.newLatLngZoom(currentLocation, 17f), durationMs = 1000)
         }
     }
 
-    // APPLY STYLE HERE
     val mapProperties = remember(isNightMode) {
-        MapProperties(
-            isMyLocationEnabled = false,
-            mapStyleOptions = if (isNightMode) DarkMapStyle else null
-        )
+        MapProperties(isMyLocationEnabled = false, mapStyleOptions = if (isNightMode) DarkMapStyle else null)
     }
 
     GoogleMap(
         modifier = Modifier.fillMaxSize(),
         cameraPositionState = cameraPositionState,
-        properties = mapProperties, // UPDATED
-        uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = false, compassEnabled = false)
+        properties = mapProperties,
+        uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = false, compassEnabled = false),
+        // Padding: Remove bottom padding when saving so the snapshot captures the full map
+        contentPadding = if (isSaving) PaddingValues(0.dp) else PaddingValues(bottom = 200.dp)
     ) {
         MapEffect(Unit) { map -> onMapLoaded(map) }
 
-        // Change Polyline color if night mode
         key(isNightMode) {
-
-            // Recalculate color inside the key block
             val polyColor = if (isNightMode) Color.Cyan else MaterialTheme.colorScheme.primary
 
-            if (pathPoints.isNotEmpty()) {
-                Polyline(points = pathPoints, color = polyColor, width = 15f)
+            val pointsToDraw = if (isSaving && pathPoints.size > 1) {
+                pathPoints.dropLast(1)
+            } else {
+                pathPoints
             }
 
-            if (displayLocation != null && !isSnapshotMode) {
-                MarkerComposable(state = MarkerState(position = displayLocation)) {
-                    val iconVector = if (isSnapshotMode) Icons.Default.Place else Icons.Default.DirectionsRun
-                    val tintColor = polyColor
-                    val size = if (isSnapshotMode) 40.dp else 36.dp
+            if (pathPoints.isNotEmpty()) {
+                Polyline(points = pointsToDraw, color = polyColor, width = 15f)
+            }
 
-                    Icon(
-                        imageVector = iconVector,
-                        contentDescription = "User",
-                        tint = polyColor,
-                        modifier = Modifier.size(size).offset(y = actualBounce.dp)
-                    )
+            // 2. MARKER LOGIC
+            if (displayLocation != null) {
+                // Keying by isSaving forces the marker to Destroy/Recreate when mode changes.
+                // This ensures the Icon swaps correctly.
+                key(isSaving) {
+                    MarkerComposable(state = MarkerState(position = displayLocation)) {
+
+                        // 3. ICON SWAP LOGIC
+                        val iconVector = if (isSaving) Icons.Default.Place else Icons.Default.DirectionsRun
+                        val size = if (isSaving) 48.dp else 40.dp
+
+                        Icon(
+                            imageVector = iconVector,
+                            contentDescription = "Location",
+                            tint = polyColor, // Matches the line
+                            modifier = Modifier.size(size).offset(y = actualBounce.dp)
+                        )
+                    }
                 }
             }
         }
@@ -302,23 +314,21 @@ fun finishRun(
     onResult: (RunEntity) -> Unit
 ) {
     if (isSaving) return
-    onStartSave() // Shows loading indicator
+    onStartSave() // Triggers UI to enter "Saving Mode" (Show Pin, Freeze Map)
 
     scope.launch {
+        // --- DELAY ---
+        // Wait 1 second (1000ms) to ensure the Map visual update (Man -> Pin) completes.
+        delay(1000)
 
         var savedPath: String? = null
-
-        // We delegate the "Move & Snap" logic to the helper function
         if (mapRef != null && pathPoints.isNotEmpty()) {
-            // This will suspend (wait) until the map is fully loaded and snapped
             savedPath = captureMapSnapshot(context, mapRef, pathPoints)
         }
 
-        // Stats Calculation
         val hours = time / 1000f / 3600f
         val avgSpeed = if (hours > 0) dist / hours else 0f
 
-        // Create & Save Entity
         val runEntity = RunEntity(
             distanceKm = dist,
             avgSpeedKmh = avgSpeed,
@@ -331,7 +341,7 @@ fun finishRun(
         onResult(runEntity)
     }
 }
-// --- HELPER COMPONENTS (Restored) ---
+// --- HELPER COMPONENTS  ---
 
 @Composable
 fun RunInfoPanel(
@@ -397,8 +407,6 @@ fun PanelStatItem(icon: ImageVector, iconColor: Color, value: String, unit: Stri
 fun PanelVerticalDivider() { Box(modifier = Modifier.height(24.dp).width(1.dp).background(Color.LightGray)) }
 
 
-// --- WEATHER HELPERS ---
-
 @Composable
 fun getWeatherIcon(code: Int, isDay: Int): ImageVector {
     // 1. NIGHT MODE CHECK (If it's night and the sky is clear, show Moon)
@@ -413,7 +421,6 @@ fun getWeatherIcon(code: Int, isDay: Int): ImageVector {
         45, 48 -> Icons.Rounded.Cloud        // 🌫️ Fog (Cloud is better than nothing)
 
         // RAIN: Used to be "Grain" (dots), now "Thunderstorm" (Cloud + Rain/Bolt)
-        // Note: If you have extended library, use 'Icons.Rounded.WeatherRainy'
         51, 53, 55 -> Icons.Rounded.Thunderstorm // 🌧️ Cloud + Rain
         61, 63, 65 -> Icons.Rounded.Thunderstorm
         80, 81, 82 -> Icons.Rounded.Thunderstorm
@@ -513,9 +520,7 @@ suspend fun captureMapSnapshot(
             val bounds = boundsBuilder.build()
 
             // 2. Move Camera (with padding)
-            // 150 padding ensures the line doesn't touch the edge of the image
             googleMap.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 400))
-
             // 3. WAIT for the map to finish loading tiles!
             googleMap.setOnMapLoadedCallback {
                 // 4. Now it is safe to take the picture

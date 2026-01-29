@@ -63,9 +63,9 @@ fun AllActivitiesScreen(
                 },
                 colors = TopAppBarDefaults.topAppBarColors(
                     containerColor = MaterialTheme.colorScheme.surface,
-                    titleContentColor = MaterialTheme.colorScheme.surface,
-                    navigationIconContentColor = MaterialTheme.colorScheme.surface,
-                    actionIconContentColor = MaterialTheme.colorScheme.surface
+                    titleContentColor = MaterialTheme.colorScheme.onSurface,
+                    navigationIconContentColor = MaterialTheme.colorScheme.onSurface,
+                    actionIconContentColor = MaterialTheme.colorScheme.onSurface
                 )
             )
         },

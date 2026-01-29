@@ -217,6 +217,9 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     private val _userHeight = MutableStateFlow(175f)
     val userHeight = _userHeight.asStateFlow()
 
+    private val _showWelcomeDialog = MutableStateFlow(false)
+    val showWelcomeDialog = _showWelcomeDialog.asStateFlow()
+
     val sortedRuns: StateFlow<List<RunEntity>> = combine(
         _allRuns,
         _sortOption,
@@ -458,16 +461,28 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     // --- FETCH GOALS FROM SERVER ---
     fun loadGoalsFromCloud() = viewModelScope.launch {
         val user = auth.currentUser ?: return@launch
-        val dateString = getCurrentWeekStartDate() // e.g., "2024-05-27"
+        val dateString = getCurrentWeekStartDate()
 
         val result = RunApi.fetchGoal(user.uid, dateString)
+
         if (result != null) {
+            // Case A: User HAS goals in DB (Server returned 200)
             _goalDistance.value = result.first
             _goalCalories.value = result.second
+            // Ensure dialog is closed
+            _showWelcomeDialog.value = false
+        } else {
+            // Case B: User has NO goals (Server returned 404) -> SHOW DIALOG
+            _showWelcomeDialog.value = true
         }
     }
 
-    // --- SAVE GOALS TO SERVER ---
+    // Call this when the user clicks "Save" in the dialog
+    fun completeOnboarding(distance: Float, calories: Int) {
+        updateWeeklyGoals(distance, calories)
+        _showWelcomeDialog.value = false
+    }
+
     fun updateWeeklyGoals(distance: Float, calories: Int) = viewModelScope.launch {
         // 1. Update UI immediately
         _goalDistance.value = distance
@@ -515,6 +530,26 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     fun cleanup() {
         fusedLocationClient.removeLocationUpdates(locationCallback)
     }
+
+    fun clearData() {
+        // 1. Clear In-Memory State
+        _allRuns.value = emptyList()
+        _totalDistance.value = 0f
+        _weeklyCalories.value = 0
+        _goalDistance.value = 10f
+        _goalCalories.value = 2000
+        _userWeight.value = 70f  // Reset to default
+        _userHeight.value = 175f // Reset to default
+        _showWelcomeDialog.value = false
+
+        // 2. Clear Local Storage (Shared Preferences)
+        val prefs = getApplication<Application>().getSharedPreferences("run_app_prefs", android.content.Context.MODE_PRIVATE)
+        prefs.edit()
+            .remove("weight")
+            .remove("height")
+            .apply()
+    }
+
 
     private fun startTimer() {
         timerJob?.cancel()

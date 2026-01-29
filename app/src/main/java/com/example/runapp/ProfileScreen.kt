@@ -221,6 +221,7 @@ fun ProfileScreen(
                         text = "Logout",
                         isDestructive = true,
                         onClick = {
+                            viewModel.clearData()
                             FirebaseAuth.getInstance().signOut()
                             onLogoutClick()
                         }
@@ -275,19 +276,19 @@ fun AchievementsDialog(
     Dialog(onDismissRequest = onDismiss) {
         Card(
             shape = RoundedCornerShape(24.dp),
-            colors = CardDefaults.cardColors(containerColor = Color.White),
+            colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.background ),
             elevation = CardDefaults.cardElevation(8.dp),
             modifier = Modifier.fillMaxWidth().height(500.dp)
         ) {
             Column(modifier = Modifier.padding(20.dp)) {
-                Text("Your Trophy Case", fontSize = 22.sp, fontWeight = FontWeight.Bold)
+                Text("Your Trophy Case", fontSize = 22.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 Spacer(modifier = Modifier.height(16.dp))
 
                 LazyVerticalGrid(
                     columns = GridCells.Fixed(2),
                     verticalArrangement = Arrangement.spacedBy(16.dp),
                     horizontalArrangement = Arrangement.spacedBy(16.dp),
-                    modifier = Modifier.weight(1f)
+                    modifier = Modifier.weight(1f),
                 ) {
                     items(achievements) { achievement ->
                         val isUnlocked = achievement.condition(runHistory)
@@ -317,7 +318,7 @@ fun AchievementItem(achievement: Achievement, isUnlocked: Boolean) {
     Column(
         horizontalAlignment = Alignment.CenterHorizontally,
         modifier = Modifier
-            .background(if (isUnlocked) Color(0xFFFFF8E1) else Color(0xFFF5F5F5), RoundedCornerShape(12.dp))
+            .background(if (isUnlocked) Color(0xFFFFF8E1) else Color(0xFFFFF8E1), RoundedCornerShape(12.dp))
             .padding(12.dp)
     ) {
         Box(
