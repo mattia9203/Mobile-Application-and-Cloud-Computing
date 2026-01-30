@@ -190,4 +190,27 @@ object RunApi {
             return@withContext null
         }
     }
+    suspend fun getUserProfile(uid: String): Triple<String, Float, Float>? {
+        return withContext(Dispatchers.IO) {
+            try {
+                val url = URL("$BASE_URL/get_user?uid=$uid")
+                val conn = url.openConnection() as HttpURLConnection
+                conn.requestMethod = "GET"
+
+                if (conn.responseCode == 200) {
+                    val response = conn.inputStream.bufferedReader().use { it.readText() }
+                    val json = JSONObject(response)
+
+                    val name = json.optString("name", "Runner")
+                    val weight = json.optDouble("weight", 70.0).toFloat()
+                    val height = json.optDouble("height", 175.0).toFloat()
+
+                    return@withContext Triple(name, weight, height)
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            return@withContext null
+        }
+    }
 }

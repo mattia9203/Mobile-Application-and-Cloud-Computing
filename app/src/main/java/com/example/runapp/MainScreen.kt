@@ -78,14 +78,15 @@ fun MainScreen(
         LaunchedEffect(Unit) {
             val perms = mutableListOf(Manifest.permission.ACCESS_FINE_LOCATION)
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.Q) perms.add(Manifest.permission.ACTIVITY_RECOGNITION)
-            permissionLauncher.launch(perms.toTypedArray())
+            permissionLauncher.launch(perms.toTypedArray())           //popup asking for permissions
         }
 
+        //swip down to reload
         val pullRefreshState = rememberPullToRefreshState()
         if (pullRefreshState.isRefreshing) {
-            LaunchedEffect(true) {
-                viewModel.refreshData().join() // Wait for refresh to finish
-                pullRefreshState.endRefresh()
+            LaunchedEffect(true) {                  //launch a coroutine to handle the data detching
+                viewModel.refreshData().join()             // Wait until download of data finish
+                pullRefreshState.endRefresh()              //hides the spinning loading icon
             }
         }
 
@@ -130,7 +131,7 @@ fun MainScreen(
                 modifier = Modifier
                     .fillMaxSize()
                     .background(MaterialTheme.colorScheme.background)
-                    .nestedScroll(pullRefreshState.nestedScrollConnection) // <--- 1. Detect Pull Gestures
+                    .nestedScroll(pullRefreshState.nestedScrollConnection)                   // Detect Pull Gestures
             ) {
 
                 // 1. BLUE HEADER BACKGROUND
@@ -328,7 +329,7 @@ fun WelcomeGoalsDialog(onSave: (Float, Int) -> Unit) {
 
                 // Inputs
                 Column(modifier = Modifier.padding(24.dp)) {
-                    OutlinedTextField(
+                    OutlinedTextField(                    //style of the input
                         value = distText,
                         onValueChange = { distText = it },
                         label = { Text("Weekly Distance (km)") },

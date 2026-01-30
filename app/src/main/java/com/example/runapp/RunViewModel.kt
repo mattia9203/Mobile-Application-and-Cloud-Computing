@@ -263,12 +263,34 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         _sortDirection.value = direction
     }
 
+    fun loadProfileFromCloud() = viewModelScope.launch {
+        val user = auth.currentUser ?: return@launch
+
+        // Fetch from Server
+        val profile = RunApi.getUserProfile(user.uid)
+
+        if (profile != null) {
+            val (_, weight, height) = profile
+
+            // 1. Update UI State
+            _userWeight.value = weight
+            _userHeight.value = height
+
+            // 2. Update Local Storage (so it remembers next time)
+            val prefs = getApplication<Application>().getSharedPreferences("run_app_prefs", android.content.Context.MODE_PRIVATE)
+            prefs.edit()
+                .putFloat("weight", weight)
+                .putFloat("height", height)
+                .apply()
+        }
+    }
+
     fun refreshData() = viewModelScope.launch {
 
         // Reload everything from server
         val runsDeferred = async { loadRunsFromCloud() }
         val goalsDeferred = async { loadGoalsFromCloud() }
-        val profileDeferred = async { loadLocalProfile() }
+        val profileDeferred = async { loadProfileFromCloud() }
 
         // 3. Wait for all to finish
         awaitAll(runsDeferred, goalsDeferred, profileDeferred)
@@ -279,6 +301,7 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         loadGoalsFromCloud()
         loadLocalProfile()
         loadSettings()
+        refreshData()
     }
 
     private fun loadSettings() {
