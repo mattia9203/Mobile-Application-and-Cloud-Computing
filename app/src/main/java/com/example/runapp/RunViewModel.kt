@@ -53,7 +53,7 @@ enum class SortDirection {
 }
 
 class RunViewModel(application: Application) : AndroidViewModel(application) {
-    // --- CLOUD SETUP ---
+    // CLOUD SETUP
     private val auth = FirebaseAuth.getInstance()
     private val fusedLocationClient = LocationServices.getFusedLocationProviderClient(application)
 
@@ -66,7 +66,7 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     private val _isLightSensorEnabled = MutableStateFlow(true)
     val isLightSensorEnabled = _isLightSensorEnabled.asStateFlow()
 
-    // --- LIVE RUN STATE ---
+    // LIVE RUN STATE
     private val _runState = MutableStateFlow(RunState.READY)
     val runState = _runState.asStateFlow()
 
@@ -102,19 +102,19 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     private val _weeklyChartData = MutableStateFlow<List<Float>>(listOf(0f, 0f, 0f, 0f, 0f, 0f, 0f))
     val weeklyChartData = _weeklyChartData.asStateFlow()
 
-    private val _currentWeekTotal = MutableStateFlow("") // e.g., "48 kcal"
+    private val _currentWeekTotal = MutableStateFlow("")
     val currentWeekTotal = _currentWeekTotal.asStateFlow()
 
-    // 3. Logic to process data when runs change or type changes
+    // Logic to process data when runs change or type changes
     fun setStatsType(type: StatsType) {
         _selectedStatsType.value = type
         calculateWeeklyStats()
     }
 
-    // 1. TRACK WEEK OFFSET (0 = This Week, -1 = Last Week, etc.)
+    // TRACK WEEK OFFSET (0 = This Week, -1 = Last Week, etc.)
     private var weekOffset = 0
 
-    // 2. EXPOSE START DATE OF THE SELECTED WEEK (For the UI Date Strip)
+    // EXPOSE START DATE OF THE SELECTED WEEK
     private val _currentWeekStartMillis = MutableStateFlow(0L)
     val currentWeekStartMillis = _currentWeekStartMillis.asStateFlow()
 
@@ -132,7 +132,7 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         val runs = _allRuns.value
         val type = _selectedStatsType.value
 
-        // --- 1. FIND START OF THE TARGET WEEK ---
+        // FIND START OF THE TARGET WEEK ---
         val calendar = Calendar.getInstance()
         // Reset to Today 00:00
         calendar.set(Calendar.HOUR_OF_DAY, 0)
@@ -142,10 +142,10 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
 
         // Go back to Monday
         val currentDayInt = calendar.get(Calendar.DAY_OF_WEEK)
-        val daysToMonday = if (currentDayInt == Calendar.SUNDAY) 6 else currentDayInt - 2
+        val daysToMonday = if (currentDayInt == Calendar.SUNDAY) 6 else currentDayInt - 2           //because in java calendar sunday = 1 and monday=2
         calendar.add(Calendar.DAY_OF_YEAR, -daysToMonday)
 
-        // APPLY OFFSET (Shift by X weeks)
+        // Apply offset (Shift by X weeks)
         calendar.add(Calendar.WEEK_OF_YEAR, weekOffset)
 
         val startOfWeek = calendar.timeInMillis
@@ -154,7 +154,7 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         // End of that week (Start + 7 days)
         val endOfWeek = startOfWeek + (7 * 24 * 60 * 60 * 1000)
 
-        // --- 2. CALCULATE STATS ---
+        // Calculate stats
         val daysData = FloatArray(7) { 0f }
         var total = 0f
 

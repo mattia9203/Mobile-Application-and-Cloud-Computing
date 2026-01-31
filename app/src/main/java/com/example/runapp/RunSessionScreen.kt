@@ -158,7 +158,7 @@ fun RunSessionScreen(
                         isSaving = isSaving,
                         onTogglePause = { if (runState == RunState.RUNNING) viewModel.pauseRun() else viewModel.resumeRun() },
                         onStop = {
-                            // --- STOP SEQUENCE ---
+                            // STOP SEQUENCE
                             viewModel.pauseRun() // 1. Stop path growth
                             finalSnapshotLocation = currentLatLng // 2. Lock location
 
@@ -176,7 +176,7 @@ fun RunSessionScreen(
                 }
             }
         } else {
-            // 5. LOADING SPINNER (Visible when isSaving = true)
+            // 5. LOADING SPINNER
             Box(
                 modifier = Modifier
                     .fillMaxSize()
@@ -226,11 +226,11 @@ fun MapWithRunnerIcon(
     frozenLocation: LatLng?,
     currentSpeedKmh: Float,
     pathPoints: List<LatLng>,
-    isSaving: Boolean, // <--- Using isSaving to drive the display logic
+    isSaving: Boolean,
     isNightMode: Boolean,
     onMapLoaded: (GoogleMap) -> Unit
 ) {
-    // 1. FREEZE LOCATION LOGIC
+    // FREEZE LOCATION LOGIC
     // If saving, force the map to use the Frozen location. This stops the "Man" from moving.
     val displayLocation = if (isSaving) frozenLocation else currentLocation
 
@@ -259,7 +259,7 @@ fun MapWithRunnerIcon(
         properties = mapProperties,
         uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = false, compassEnabled = false),
         // Padding: Remove bottom padding when saving so the snapshot captures the full map
-        contentPadding = if (isSaving) PaddingValues(0.dp) else PaddingValues(bottom = 200.dp)
+        contentPadding = PaddingValues(0.dp)
     ) {
         MapEffect(Unit) { map -> onMapLoaded(map) }
 
@@ -278,8 +278,7 @@ fun MapWithRunnerIcon(
 
             // 2. MARKER LOGIC
             if (displayLocation != null) {
-                // Keying by isSaving forces the marker to Destroy/Recreate when mode changes.
-                // This ensures the Icon swaps correctly.
+                // Keying by isSaving forces the marker to Destroy/Recreate when mode changes. This ensures the Icon swaps correctly.
                 key(isSaving) {
                     MarkerComposable(state = MarkerState(position = displayLocation)) {
 
@@ -317,7 +316,6 @@ fun finishRun(
     onStartSave() // Triggers UI to enter "Saving Mode" (Show Pin, Freeze Map)
 
     scope.launch {
-        // --- DELAY ---
         // Wait 1 second (1000ms) to ensure the Map visual update (Man -> Pin) completes.
         delay(1000)
 
@@ -409,7 +407,7 @@ fun PanelVerticalDivider() { Box(modifier = Modifier.height(24.dp).width(1.dp).b
 
 @Composable
 fun getWeatherIcon(code: Int, isDay: Int): ImageVector {
-    // 1. NIGHT MODE CHECK (If it's night and the sky is clear, show Moon)
+    // 1. NIGHT MODE CHECK (
     if (isDay == 0 && (code == 0 || code == 1 || code == 2)) {
         return Icons.Rounded.Star // 🌙 Moon Icon
     }

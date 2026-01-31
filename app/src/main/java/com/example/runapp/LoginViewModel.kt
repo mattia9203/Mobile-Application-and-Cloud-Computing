@@ -3,7 +3,7 @@ package com.example.runapp
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.google.firebase.auth.FirebaseAuth
-import com.google.firebase.auth.UserProfileChangeRequest // <--- IMPORTANT IMPORT
+import com.google.firebase.auth.UserProfileChangeRequest
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.launch
@@ -13,8 +13,6 @@ class LoginViewModel : ViewModel() {
     private val auth: FirebaseAuth = FirebaseAuth.getInstance()
     private val _loginState = MutableStateFlow<AuthResult>(AuthResult.Idle)
     val loginState = _loginState.asStateFlow()
-
-    fun isUserLoggedIn(): Boolean = auth.currentUser != null
 
     fun login(email: String, pass: String) = viewModelScope.launch {
         if (email.isBlank() || pass.isBlank()) {
@@ -56,8 +54,6 @@ class LoginViewModel : ViewModel() {
             if (apiSuccess) {
                 _loginState.value = AuthResult.Success
             } else {
-                // Even if server fails, we let them in, but maybe show a warning?
-                // For now, let's just proceed.
                 _loginState.value = AuthResult.Success
             }
         } catch (e: Exception) {

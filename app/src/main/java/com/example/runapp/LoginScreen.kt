@@ -43,8 +43,8 @@ fun LoginScreen(onLoginSuccess: () -> Unit) {
     var email by remember { mutableStateOf("") }
     var password by remember { mutableStateOf("") }
     var name by remember { mutableStateOf("") }
-    var weight by remember { mutableStateOf("") } // New Field
-    var height by remember { mutableStateOf("") } // New Field
+    var weight by remember { mutableStateOf("") }
+    var height by remember { mutableStateOf("") }
 
     // UI State
     var isSignUpMode by remember { mutableStateOf(false) }

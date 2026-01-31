@@ -28,9 +28,7 @@ import coil.compose.AsyncImage
 import java.text.SimpleDateFormat
 import java.util.*
 
-// --- COLOR CHANGES ---
 val CardBorderColor = Color(0xFFE0E0E0)
-val CardBackgroundColor = Color(0xFFF5F7FA) // <--- GREY CARDS
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable

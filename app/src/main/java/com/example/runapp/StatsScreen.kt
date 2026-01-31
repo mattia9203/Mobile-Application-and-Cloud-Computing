@@ -172,7 +172,7 @@ fun WeekDaysStrip(
     weekStartMillis: Long,
     onPrevClick: () -> Unit,
     onNextClick: () -> Unit,
-    isDarkMode: Boolean // <--- Pass this down
+    isDarkMode: Boolean
 ) {
     val days = listOf("M", "T", "W", "T", "F", "S", "S")
     val calendar = Calendar.getInstance()
@@ -393,7 +393,6 @@ fun SmoothLineGraph(
                 drawCircle(color = Color.White, radius = 8.dp.toPx(), center = Offset(x, y))
                 drawCircle(color = lineColor, radius = 6.dp.toPx(), center = Offset(x, y))
 
-                // USES 'selectedType' HERE TO FORMAT TOOLTIP
                 val tooltipValue = if (selectedType == StatsType.DISTANCE) "%.2f".format(data[i]) else data[i].toInt().toString()
                 val tooltipText = "$tooltipValue $unit"
                 val textWidth = tooltipTextPaint.measureText(tooltipText)

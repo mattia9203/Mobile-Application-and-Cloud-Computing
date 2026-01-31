@@ -124,7 +124,7 @@ fun ProfileScreen(
 
         Spacer(modifier = Modifier.height(20.dp))
 
-        // --- CONTENT SECTION ---
+        // CONTENT SECTION
         Column(modifier = Modifier.padding(horizontal = 20.dp)) {
 
             Text(
@@ -150,14 +150,14 @@ fun ProfileScreen(
                     // 1. Distance
                     ProgressItem(
                         icon = Icons.Rounded.DirectionsRun,
-                        color = Color(0xFF5E35B1), // Purple
+                        color = Color(0xFF5E35B1),
                         value = "%.1f".format(Locale.US, totalDistance),
                         unit = "km"
                     )
 
                     VerticalDivider(modifier = Modifier.height(40.dp))
 
-                    // 2. CALORIES (Moved to Center)
+                    // 2. CALORIES
                     ProgressItem(
                         icon = Icons.Rounded.LocalFireDepartment,
                         color = Color(0xFFF4511E), // Orange
@@ -179,7 +179,7 @@ fun ProfileScreen(
 
             Spacer(modifier = Modifier.height(30.dp))
 
-            // 2. MENU LIST
+            // MENU LIST
             Card(
                 colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
                 shape = RoundedCornerShape(16.dp),
@@ -265,7 +265,7 @@ fun ProfileScreen(
 }
 
 
-// --- HELPER COMPOSABLES FOR DIALOGS ---
+// HELPER COMPOSABLES FOR DIALOGS
 
 @Composable
 fun AchievementsDialog(
@@ -438,7 +438,7 @@ fun EditGoalsDialog(
     )
 }
 
-// --- HELPER COMPONENTS ---
+// HELPER COMPONENTS
 
 @Composable
 fun ProgressItem(icon: ImageVector, color: Color, value: String, unit: String) {
