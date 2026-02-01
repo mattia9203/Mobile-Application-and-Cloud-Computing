@@ -525,16 +525,16 @@ suspend fun captureMapSnapshot(
 
     return suspendCoroutine { continuation ->
         try {
-            // 1. Calculate Bounds
+            // Calculate Bounds
             val boundsBuilder = LatLngBounds.Builder()
             pathPoints.forEach { boundsBuilder.include(it) }
             val bounds = boundsBuilder.build()
 
-            // 2. Move Camera (with padding)
+            // Move Camera (with padding)
             googleMap.moveCamera(CameraUpdateFactory.newLatLngBounds(bounds, 400))
-            // 3. WAIT for the map to finish loading tiles!
+            // WAIT for the map to finish loading tiles!
             googleMap.setOnMapLoadedCallback {
-                // 4. Now it is safe to take the picture
+                // Now it is safe to take the picture
                 googleMap.snapshot { bitmap ->
                     if (bitmap != null) {
                         try {

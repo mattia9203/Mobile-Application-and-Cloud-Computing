@@ -47,7 +47,7 @@ class ShakeDetector(context: Context) {
                         // Only trigger if cooldown has passed
                         if (lastShakeTime + minTimeBetweenShakesMs < now) {
                             lastShakeTime = now
-                            trySend(Unit) // Send Signal!
+                            trySend(Unit) // Send Signal
                         }
                     }
                 }

@@ -31,7 +31,6 @@ class LightSensor(context: Context) {
             override fun onAccuracyChanged(sensor: Sensor?, accuracy: Int) {}
         }
 
-        // SENSOR_DELAY_UI is perfect for this (updates often enough but saves battery)
         sensorManager.registerListener(listener, lightSensor, SensorManager.SENSOR_DELAY_UI)
 
         awaitClose {

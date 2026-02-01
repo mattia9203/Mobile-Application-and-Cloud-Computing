@@ -82,7 +82,7 @@ fun ProfileScreen(
                 .clip(RoundedCornerShape(bottomStart = 40.dp, bottomEnd = 40.dp))
                 .background(MaterialTheme.colorScheme.primary)
         ) {
-            // BACK BUTTON (Top Left)
+            // BACK BUTTON
             IconButton(
                 onClick = onBackClick,
                 modifier = Modifier
@@ -167,7 +167,7 @@ fun ProfileScreen(
 
                     VerticalDivider(modifier = Modifier.height(40.dp))
 
-                    // 3. TIME (Moved to End)
+                    // 3. TIME
                     ProgressItem(
                         icon = Icons.Rounded.Timer,
                         color = Color(0xFF00897B), // Teal

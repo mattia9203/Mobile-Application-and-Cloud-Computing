@@ -508,14 +508,14 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     }
 
     fun updateWeeklyGoals(distance: Float, calories: Int) = viewModelScope.launch {
-        // 1. Update UI immediately
+        // Update UI immediately
         _goalDistance.value = distance
         _goalCalories.value = calories
 
         val user = auth.currentUser ?: return@launch
         val dateString = getCurrentWeekStartDate()
 
-        // 2. Send to Python Server
+        // Send to Python Server
         RunApi.saveGoal(user.uid, dateString, distance, calories)
     }
 

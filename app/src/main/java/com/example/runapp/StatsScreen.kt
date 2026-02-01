@@ -177,7 +177,6 @@ fun WeekDaysStrip(
     val days = listOf("M", "T", "W", "T", "F", "S", "S")
     val calendar = Calendar.getInstance()
     val todayCal = Calendar.getInstance()
-    // ... (logic) ...
     val isCurrentWeek = todayCal.timeInMillis >= weekStartMillis &&
             todayCal.timeInMillis < (weekStartMillis + 7 * 24 * 60 * 60 * 1000)
     val currentDayInt = todayCal.get(Calendar.DAY_OF_WEEK)
