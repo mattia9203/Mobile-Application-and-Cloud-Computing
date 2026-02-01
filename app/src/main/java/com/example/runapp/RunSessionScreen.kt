@@ -139,40 +139,53 @@ fun RunSessionScreen(
                     .padding(16.dp)
                     .zIndex(2f)
             ) {
-                if (runState == RunState.READY) {
-                    Button(
-                        onClick = { viewModel.startRun() },
-                        colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
-                        modifier = Modifier.fillMaxWidth().height(56.dp),
-                        shape = RoundedCornerShape(28.dp)
-                    ) {
-                        Text("START RUNNING", fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.White)
-                    }
-                } else {
-                    RunInfoPanel(
-                        durationMillis = durationMillis,
-                        distanceKm = distanceKm,
-                        calories = calories,
-                        speedKmh = currentSpeedKmh,
-                        runState = runState,
-                        isSaving = isSaving,
-                        onTogglePause = { if (runState == RunState.RUNNING) viewModel.pauseRun() else viewModel.resumeRun() },
-                        onStop = {
-                            // STOP SEQUENCE
-                            viewModel.pauseRun() // 1. Stop path growth
-                            finalSnapshotLocation = currentLatLng // 2. Lock location
-
-                            finishRun(
-                                scope = scope,
-                                isSaving = isSaving,
-                                mapRef = googleMapRef,
-                                context = context,
-                                dist = distanceKm, speed = currentSpeedKmh, time = durationMillis, cals = calories, pathPoints = pathPoints,
-                                onStartSave = { isSaving = true }, // 3. Set Saving (Triggers Map to switch to Pin)
-                                onResult = { entity -> viewModel.stopRun(); onStopClick(entity) }
+                RunAppTheme(darkTheme = isNightMode) {
+                    if (runState == RunState.READY) {
+                        Button(
+                            onClick = { viewModel.startRun() },
+                            colors = ButtonDefaults.buttonColors(containerColor = MaterialTheme.colorScheme.primary),
+                            modifier = Modifier.fillMaxWidth().height(56.dp),
+                            shape = RoundedCornerShape(28.dp)
+                        ) {
+                            Text(
+                                "START RUNNING",
+                                fontSize = 18.sp,
+                                fontWeight = FontWeight.Bold,
+                                color = Color.White
                             )
                         }
-                    )
+                    } else {
+                        RunInfoPanel(
+                            durationMillis = durationMillis,
+                            distanceKm = distanceKm,
+                            calories = calories,
+                            speedKmh = currentSpeedKmh,
+                            runState = runState,
+                            isSaving = isSaving,
+                            onTogglePause = { if (runState == RunState.RUNNING) viewModel.pauseRun() else viewModel.resumeRun() },
+                            onStop = {
+                                // STOP SEQUENCE
+                                viewModel.pauseRun() // 1. Stop path growth
+                                finalSnapshotLocation = currentLatLng // 2. Lock location
+
+                                finishRun(
+                                    scope = scope,
+                                    isSaving = isSaving,
+                                    mapRef = googleMapRef,
+                                    context = context,
+                                    dist = distanceKm,
+                                    speed = currentSpeedKmh,
+                                    time = durationMillis,
+                                    cals = calories,
+                                    pathPoints = pathPoints,
+                                    onStartSave = {
+                                        isSaving = true
+                                    }, // 3. Set Saving (Triggers Map to switch to Pin)
+                                    onResult = { entity -> viewModel.stopRun(); onStopClick(entity) }
+                                )
+                            }
+                        )
+                    }
                 }
             }
         } else {
@@ -354,7 +367,7 @@ fun RunInfoPanel(
 ) {
     Card(
         shape = RoundedCornerShape(24.dp),
-        colors = CardDefaults.cardColors(containerColor = Color.White),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
         elevation = CardDefaults.cardElevation(10.dp),
         modifier = Modifier.fillMaxWidth()
     ) {
@@ -362,7 +375,7 @@ fun RunInfoPanel(
             Text("Running Time", fontSize = 14.sp, color = Color.Gray)
             Spacer(modifier = Modifier.height(4.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
-                Text(formatTime(durationMillis), fontSize = 36.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+                Text(formatTime(durationMillis), fontSize = 36.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
                 Row(horizontalArrangement = Arrangement.spacedBy(12.dp)) {
                     if (runState == RunState.PAUSED) {
                         FilledIconButton(onClick = onStop, colors = IconButtonDefaults.filledIconButtonColors(containerColor = Color(0xFFD32F2F)), modifier = Modifier.size(56.dp)) {
@@ -376,7 +389,7 @@ fun RunInfoPanel(
                 }
             }
             Spacer(modifier = Modifier.height(20.dp))
-            HorizontalDivider(thickness = 1.dp, color = Color(0xFFF0F0F0))
+            HorizontalDivider(thickness = 1.dp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.1f))
             Spacer(modifier = Modifier.height(20.dp))
             Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
                 PanelStatItem(Icons.Default.DirectionsRun, Color(0xFFFF9800), "%.2f".format(distanceKm), "km")
@@ -395,14 +408,14 @@ fun PanelStatItem(icon: ImageVector, iconColor: Color, value: String, unit: Stri
         Row(verticalAlignment = Alignment.CenterVertically) {
             Icon(icon, null, tint = iconColor, modifier = Modifier.size(18.dp))
             Spacer(modifier = Modifier.width(4.dp))
-            Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = Color.Black)
+            Text(value, fontSize = 18.sp, fontWeight = FontWeight.Bold, color = MaterialTheme.colorScheme.onSurface)
         }
-        Text(unit, fontSize = 12.sp, color = Color.Gray)
+        Text(unit, fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.6f))
     }
 }
 
 @Composable
-fun PanelVerticalDivider() { Box(modifier = Modifier.height(24.dp).width(1.dp).background(Color.LightGray)) }
+fun PanelVerticalDivider() { Box(modifier = Modifier.height(24.dp).width(1.dp).background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.2f))) }
 
 
 @Composable

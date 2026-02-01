@@ -132,7 +132,7 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         val runs = _allRuns.value
         val type = _selectedStatsType.value
 
-        // FIND START OF THE TARGET WEEK ---
+        // FIND START OF THE TARGET WEEK
         val calendar = Calendar.getInstance()
         // Reset to Today 00:00
         calendar.set(Calendar.HOUR_OF_DAY, 0)
@@ -201,7 +201,7 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
     private val _totalDistance = MutableStateFlow(0f)
     val totalDistance = _totalDistance.asStateFlow()
 
-    // --- NEW: CALORIE STATS ---
+    // --- CALORIE STATS ---
     private val _weeklyCalories = MutableStateFlow(0)
     val weeklyCalories = _weeklyCalories.asStateFlow()
 
@@ -237,7 +237,7 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         option: SortOption,
         direction: SortDirection
     ): List<RunEntity> {
-        // 1. Define how to compare two runs based on the selected option
+        // Define how to compare two runs based on the selected option
         val comparator = when (option) {
             SortOption.DATE -> compareBy<RunEntity> { it.timestamp }
             SortOption.DISTANCE -> compareBy { it.distanceKm }
@@ -254,7 +254,7 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- 5. NEW FUNCTIONS FOR UI TO CALL ---
+    // NEW FUNCTIONS FOR UI TO CALL
     fun updateSortOption(option: SortOption) {
         _sortOption.value = option
     }
@@ -384,7 +384,7 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         )
     )
 
-    // --- LOCATION CALLBACK ---
+    // LOCATION CALLBACK
     private val locationCallback = object : LocationCallback() {
         override fun onLocationResult(result: LocationResult) {
             for (location in result.locations) {
@@ -438,7 +438,8 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         val condition: (List<RunEntity>) -> Boolean
     )
 
-    // --- ACTIONS ---
+    // ACTIONS
+    //Request location and send it to the locationCallback function
     @SuppressLint("MissingPermission")
     fun startLocationUpdates() {
         val request = LocationRequest.Builder(Priority.PRIORITY_HIGH_ACCURACY, 1000)
@@ -447,7 +448,7 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         fusedLocationClient.requestLocationUpdates(request, locationCallback, Looper.getMainLooper())
     }
 
-    // ---GET CURRENT MONDAY DATE STRING ---
+    //GET CURRENT MONDAY DATE STRING
     private fun getCurrentWeekStartDate(): String {
         val calendar = Calendar.getInstance()
         calendar.firstDayOfWeek = Calendar.MONDAY
@@ -481,7 +482,7 @@ class RunViewModel(application: Application) : AndroidViewModel(application) {
         }
     }
 
-    // --- FETCH GOALS FROM SERVER ---
+    // FETCH GOALS FROM SERVER
     fun loadGoalsFromCloud() = viewModelScope.launch {
         val user = auth.currentUser ?: return@launch
         val dateString = getCurrentWeekStartDate()

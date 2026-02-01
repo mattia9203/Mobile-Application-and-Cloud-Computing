@@ -80,7 +80,7 @@
                                               <map>
                                                 <entry key="color" value="000000" />
                                                 <entry key="imagePath" value="C:\Users\matti\Pictures\Screenshots\Screenshot 2026-01-29 200832.png" />
-                                                <entry key="scalingPercent" value="137" />
+                                                <entry key="scalingPercent" value="110" />
                                               </map>
                                             </option>
                                           </PersistentState>
@@ -114,7 +114,6 @@
                                     <map>
                                       <entry key="backgroundAssetType" value="COLOR" />
                                       <entry key="backgroundColor" value="1565c0" />
-                                      <entry key="generateWebpIcons" value="false" />
                                       <entry key="legacyIconShape" value="NONE" />
                                       <entry key="previewDensity" value="mdpi" />
                                     </map>
