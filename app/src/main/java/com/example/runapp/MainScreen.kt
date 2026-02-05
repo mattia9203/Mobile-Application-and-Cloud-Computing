@@ -35,6 +35,9 @@ import java.util.concurrent.TimeUnit
 import androidx.compose.material3.pulltorefresh.PullToRefreshContainer
 import androidx.compose.material3.pulltorefresh.rememberPullToRefreshState
 import androidx.compose.ui.input.nestedscroll.nestedScroll
+import kotlinx.coroutines.tasks.await
+import kotlinx.coroutines.delay
+
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MainScreen(
@@ -571,8 +574,34 @@ fun formatDurationMain(millis: Long): String {
 @Composable
 fun AppHeader(whiteText: Boolean = false, onProfileClick: () -> Unit) {
     val auth = FirebaseAuth.getInstance()
-    val user = auth.currentUser
-    val displayName = user?.displayName ?: "Runner"
+
+    // 1. Initialize with the current name (which might be null/"Runner" initially)
+    var displayName by remember { mutableStateOf(auth.currentUser?.displayName ?: "Runner") }
+
+    // 2. The "Patience" Loop
+    LaunchedEffect(Unit) {
+        val user = auth.currentUser
+        var attempts = 0
+
+        // Loop while the name is missing/default AND we haven't tried too many times (e.g. 4 seconds)
+        while ((displayName == "Runner" || displayName.isBlank()) && attempts < 8) {
+            delay(500) // Wait 0.5 seconds
+
+            try {
+                user?.reload()?.await() // Force Firebase to refresh the user data
+                val newName = user?.displayName
+
+                // If we found the real name, update the UI and stop looping
+                if (!newName.isNullOrBlank()) {
+                    displayName = newName
+                }
+            } catch (e: Exception) {
+                e.printStackTrace()
+            }
+            attempts++
+        }
+    }
+
     Row(
         modifier = Modifier.fillMaxWidth().padding(20.dp).statusBarsPadding(),
         horizontalArrangement = Arrangement.SpaceBetween,

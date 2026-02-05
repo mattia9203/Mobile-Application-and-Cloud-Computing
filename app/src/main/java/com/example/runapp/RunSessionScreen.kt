@@ -32,6 +32,7 @@ import com.google.android.gms.maps.model.CameraPosition
 import com.google.android.gms.maps.model.LatLng
 import com.google.android.gms.maps.model.LatLngBounds
 import com.google.android.gms.maps.model.MapStyleOptions
+import androidx.compose.animation.core.tween
 import com.google.maps.android.compose.*
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -243,19 +244,16 @@ fun MapWithRunnerIcon(
     isNightMode: Boolean,
     onMapLoaded: (GoogleMap) -> Unit
 ) {
-    // FREEZE LOCATION LOGIC
-    // If saving, force the map to use the Frozen location. This stops the "Man" from moving.
+    // 1. LOCATION & CAMERA LOGIC
     val displayLocation = if (isSaving) frozenLocation else currentLocation
-
     val defaultPos = LatLng(0.0, 0.0)
     val cameraPositionState = rememberCameraPositionState { position = CameraPosition.fromLatLngZoom(defaultPos, 17f) }
 
-    // Bounce Animation (Only when NOT saving and actually moving)
+    // Bounce Animation
     val infiniteTransition = rememberInfiniteTransition(label = "runnerAnim")
     val bounceOffset by infiniteTransition.animateFloat(initialValue = 0f, targetValue = -10f, animationSpec = infiniteRepeatable(tween(300, easing = FastOutSlowInEasing), RepeatMode.Reverse), label = "bounce")
     val actualBounce = if (!isSaving && currentSpeedKmh > 1.0f) bounceOffset else 0f
 
-    // Camera follow logic (Only follow if NOT saving)
     LaunchedEffect(currentLocation, isSaving) {
         if (currentLocation != null && !isSaving) {
             cameraPositionState.animate(update = CameraUpdateFactory.newLatLngZoom(currentLocation, 17f), durationMs = 1000)
@@ -266,47 +264,63 @@ fun MapWithRunnerIcon(
         MapProperties(isMyLocationEnabled = false, mapStyleOptions = if (isNightMode) DarkMapStyle else null)
     }
 
+    // 2. DEFINE COLORS ONCE
+    val dayColor = MaterialTheme.colorScheme.primary
+    val nightColor = Color.Cyan
+
+    // Icon settings (Size/Shape) - calculated once
+    val iconVector = if (isSaving) Icons.Default.Place else Icons.Default.DirectionsRun
+    val iconSize = if (isSaving) 48.dp else 40.dp
+
     GoogleMap(
         modifier = Modifier.fillMaxSize(),
         cameraPositionState = cameraPositionState,
         properties = mapProperties,
         uiSettings = MapUiSettings(zoomControlsEnabled = false, myLocationButtonEnabled = false, compassEnabled = false),
-        // Padding: Remove bottom padding when saving so the snapshot captures the full map
         contentPadding = PaddingValues(0.dp)
     ) {
         MapEffect(Unit) { map -> onMapLoaded(map) }
 
-        key(isNightMode) {
-            val polyColor = if (isNightMode) Color.Cyan else MaterialTheme.colorScheme.primary
+        // --- POLYLINE (Always visible) ---
+        // We switch the line color dynamically (Lines don't flicker like images do)
+        val currentPolyColor = if (isNightMode) nightColor else dayColor
+        val pointsToDraw = if (isSaving && pathPoints.size > 1) pathPoints.dropLast(1) else pathPoints
 
-            val pointsToDraw = if (isSaving && pathPoints.size > 1) {
-                pathPoints.dropLast(1)
-            } else {
-                pathPoints
+        if (pathPoints.isNotEmpty()) {
+            Polyline(points = pointsToDraw, color = currentPolyColor, width = 15f)
+        }
+
+        // --- MARKERS: THE DOUBLE MARKER TRICK ---
+        if (displayLocation != null) {
+
+            // MARKER 1: DAY VERSION (Visible only when NOT Night Mode)
+            MarkerComposable(
+                keys = arrayOf("day_marker", isSaving), // Unique ID
+                state = MarkerState(position = displayLocation),
+                visible = !isNightMode, // <--- INSTANT TOGGLE
+                zIndex = 1f // Keeps it on top
+            ) {
+                Icon(
+                    imageVector = iconVector,
+                    contentDescription = "Day Location",
+                    tint = dayColor, // Always Blue
+                    modifier = Modifier.size(iconSize).offset(y = actualBounce.dp)
+                )
             }
 
-            if (pathPoints.isNotEmpty()) {
-                Polyline(points = pointsToDraw, color = polyColor, width = 15f)
-            }
-
-            // 2. MARKER LOGIC
-            if (displayLocation != null) {
-                // Keying by isSaving forces the marker to Destroy/Recreate when mode changes. This ensures the Icon swaps correctly.
-                key(isSaving) {
-                    MarkerComposable(state = MarkerState(position = displayLocation)) {
-
-                        // 3. ICON SWAP LOGIC
-                        val iconVector = if (isSaving) Icons.Default.Place else Icons.Default.DirectionsRun
-                        val size = if (isSaving) 48.dp else 40.dp
-
-                        Icon(
-                            imageVector = iconVector,
-                            contentDescription = "Location",
-                            tint = polyColor, // Matches the line
-                            modifier = Modifier.size(size).offset(y = actualBounce.dp)
-                        )
-                    }
-                }
+            // MARKER 2: NIGHT VERSION (Visible only when Night Mode IS Active)
+            MarkerComposable(
+                keys = arrayOf("night_marker", isSaving), // Unique ID
+                state = MarkerState(position = displayLocation),
+                visible = isNightMode, // <--- INSTANT TOGGLE
+                zIndex = 1f
+            ) {
+                Icon(
+                    imageVector = iconVector,
+                    contentDescription = "Night Location",
+                    tint = nightColor, // Always Cyan
+                    modifier = Modifier.size(iconSize).offset(y = actualBounce.dp)
+                )
             }
         }
     }
